@@ -16,7 +16,7 @@ export async function enterGame(id: string): Promise<string | null> {
   const r = await net.req('enter', { id }); if (r.t === 'err') return r.err; view.me = id; set({ char: r.char, loc: r.loc, screen: 'game', chat: [], dialog: null, panel: null, snap: null, died: null, travel: null, house: null, party: null, guild: null }); audio.startMusic(themeOf(r.loc)); net.send('guildInfo'); net.send('friends');
   if (r.away > 60000) toast(`Willkommen zurück! Du warst ${Math.round(r.away / 60000)} Min. weg.`); return null;
 }
-export async function logoutChar() { await net.req('logout'); set({ screen: 'chars', char: null, snap: null, panel: null, dialog: null }); audio.stopMusic(); const r = await net.req('chars'); if (r.chars) set({ chars: r.chars }); }
+export async function logoutChar() { const r = await net.req('logout'); if (r.t === 'err') { toast(r.err); return false; } set({ screen: 'chars', chars: r.chars, char: null, snap: null, panel: null, dialog: null }); audio.stopMusic(); return true; }
 export function logoutAccount() { net.close(); saveToken(''); set({ screen: 'title', token: '', user: '', chars: [], char: null }); audio.stopMusic(); }
 import { LOCS } from '@nam/game-data';
 export const themeOf = (loc: string) => LOCS[loc]?.theme || 'city';

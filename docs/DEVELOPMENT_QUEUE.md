@@ -1,4 +1,10 @@
 # Development Queue
+
+## Veröffentlichung und nächste Integrationen
+- [lokal geprüft] P0: Kampfbelohnung, Levelaufstieg, Logout und Reconnect mit JSON und PostgreSQL 16 + PostGIS. Browser-Solo: Service Worker und IndexedDB-Reconnect in Chromium.
+- [offen] PR #1 erst nach grüner GitHub-CI mergen. Danach Pages unter `/NewAgeMMO/` und neue Release-Assets prüfen.
+- [offen] P1: eigenständige Teleporter, abgesicherte GPS-/Virtuell-Wechsel, begrenzter OSM-POI-Import und Gebietskontrolle.
+
 1. [offen] APK-Build via GitHub-Actions `android.yml` ausführen/prüfen; Gradle-Ausgabe kontrollieren.
 2. [offen] Docker-Compose + PostgreSQL-Lauf (`DATABASE_URL`) verifizieren, Migrationen testen.
 3. [teilweise] Balance-Pass (Mob-Schaden/Elite/Boss, EXP-Kurve) per Simulation + Spieltest.

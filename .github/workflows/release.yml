@@ -1,6 +1,6 @@
 name: Release (APK + PWA)
 on:
-  push: { branches: [ccr-c83759b9-34xxzv], tags: ['v*'], paths: ['apps/**', 'packages/**', 'database/**', 'package-lock.json'] }
+  push: { branches: [main], tags: ['v*'], paths: ['apps/**', 'packages/**', 'database/**', 'package-lock.json'] }
   workflow_dispatch: {}
 permissions: { contents: write }
 jobs:

@@ -1,3 +1,4 @@
+import { publishProgress } from './character-save';
 import { BAL, mitig, type EvtView, type Rarity, type ItemInst, CLASS_BASE, RARITY_MULT } from '@nam/shared';
 import { LOCS, MOBS, NODES, SKILLS, SPECIES, WEATHER, ITEMS, CLASSES, SUMMON_STATS, QUESTS, EGG_SPECIES_BY_FAMILY, petExp, type MobDef, type SkillDef, type NodeDef } from '@nam/game-data';
 import { G, now, rnd, rint, clamp, dist, uid, send, sys, toLoc, type Player, type Mob, type LocState, type Fx, type NodeS } from './state';
@@ -58,13 +59,14 @@ export function damagePlayer(t: Player, a: number, crit: boolean, src: Player | 
 function killPlayer(t: Player, src: Player | Mob | null) {
   const l = locOf(t); t.dead = true; t.deadUntil = now() + 5000; t.c.hp = 0; t.target = null; t.auto = false; t.autoFarm = null; t.gather = null; t.dx = t.x; t.dy = t.y; ev(l, { k: 'die', x: t.x, y: t.y, id: t.id });
   const pvpDeath = !!(src && 'c' in src) || !!LOCS[t.loc].pvp;
-  if (src && 'c' in src) { const k = src as Player; if (t.duel && t.duel.opp === k.id) { endDuel(k, t); return; } k.c.honor += 5; for (const [h, ti] of [[100, 'Gladiator'], [500, 'Champion'], [2000, 'Legende der Arena']] as [number, string][]) if (k.c.honor >= h && !k.c.titles.includes(ti)) { k.c.titles.push(ti); sys(k, `Neuer Titel: ${ti}`, 'quest'); } k.c.arenaPts += LOCS[t.loc].kind === 'arena' ? 3 : 1; sys(k, `Du hast ${t.c.name} besiegt! +5 Ehre.`); guildWarKill(k, t); }
+  if (src && 'c' in src) { const k = src as Player; if (t.duel && t.duel.opp === k.id) { endDuel(k, t); return; } publishProgress(k, () => { k.c.honor += 5; for (const [h, ti] of [[100, 'Gladiator'], [500, 'Champion'], [2000, 'Legende der Arena']] as [number, string][]) if (k.c.honor >= h && !k.c.titles.includes(ti)) { k.c.titles.push(ti); sys(k, `Neuer Titel: ${ti}`, 'quest'); } k.c.arenaPts += LOCS[t.loc].kind === 'arena' ? 3 : 1; sys(k, `Du hast ${t.c.name} besiegt! +5 Ehre.`); guildWarKill(k, t); }); }
   if (!pvpDeath) { const loss = Math.min(t.c.exp, Math.floor(BAL.deathExpLoss * (t.c.level < BAL.maxLevel ? require_exp(t.c.level) : 0))); t.c.exp -= loss; for (const it of Object.values(t.c.equipment)) if (it?.dur !== undefined) it.dur = Math.max(0, it.dur - 8); sys(t, `Du bist gestorben und verlierst ${loss} EXP. Ausrüstung leicht beschädigt.`); }
   else sys(t, 'Du wurdest besiegt.'); send(t, { t: 'died', until: t.deadUntil });
+  publishProgress(t);
 }
 import { expToNext as require_exp } from '@nam/shared';
 export function guildWarKill(k: Player, t: Player) { const gk = k.c.guildId ? G.guilds.get(k.c.guildId) : undefined; if (gk?.war && gk.war.until > now() && t.c.guildId === gk.war.vs) { gk.war.score++; const gt = G.guilds.get(gk.war.vs); if (gt?.war) gt.war.theirScore = gk.war.score; } }
-export function endDuel(w: Player, l: Player) { const win = w, lose = l; win.duel = null; lose.duel = null; win.c.honor += 10; win.c.arenaPts += 5; win.c.gold += 100; sys(win, `Du hast das Duell gegen ${lose.c.name} gewonnen! +10 Ehre, +100 Gold.`); sys(lose, `Du hast das Duell gegen ${win.c.name} verloren.`); lose.dead = false; lose.c.hp = Math.max(1, Math.floor(lose.st.maxHp * .3)); win.c.hp = Math.max(win.c.hp, 1); send(win, { t: 'duelEnd', won: true }); send(lose, { t: 'duelEnd', won: false }); recalc(win); recalc(lose); }
+export function endDuel(w: Player, l: Player) { const win = w, lose = l; win.duel = null; lose.duel = null; publishProgress(win, () => { win.c.honor += 10; win.c.arenaPts += 5; win.c.gold += 100; sys(win, `Du hast das Duell gegen ${lose.c.name} gewonnen! +10 Ehre, +100 Gold.`); sys(lose, `Du hast das Duell gegen ${win.c.name} verloren.`); lose.dead = false; lose.c.hp = Math.max(1, Math.floor(lose.st.maxHp * .3)); win.c.hp = Math.max(win.c.hp, 1); send(win, { t: 'duelEnd', won: true }); send(lose, { t: 'duelEnd', won: false }); recalc(win); }); recalc(lose); publishProgress(lose); }
 // ---------- Tod/Beute ----------
 function killMob(l: LocState, m: Mob) {
   m.dead = true; m.hp = 0; m.respawnAt = now() + m.def.respawn * 1000 * (m.add ? 0 : 1); ev(l, { k: 'die', x: m.x, y: m.y, id: m.uid });
@@ -76,11 +78,13 @@ function killMob(l: LocState, m: Mob) {
     for (const p of g) {
       const share = party?.expMode === 'level' ? p.c.level / totLv : 1 / n; const diff = p.c.level - m.lvl; const lf = diff > 8 ? Math.max(.1, 1 - (diff - 8) * .1) : 1;
       if ((m.dmg[p.id] || 0) < m.maxHp * (m.def.role === 'boss' ? .005 : .0) && n === 1) continue;
-      gainExp(p, m.def.exp * share * bonus * lf * (n > 1 ? n : 1) / (n > 1 ? 1 : 1)); lootFor(p, m, m.add ? .1 : 1); petExpGain(p, m.def.exp * .2);
-      const gld = Math.round(rnd(m.def.gold[0], m.def.gold[1]) * (m.add ? .1 : 1) * (1 + petLoot(p))); p.c.gold += gld; ev(l, { k: 'loot', x: m.x, y: m.y, v: `+${gld}g`, id: p.id });
-      p.c.kills[m.def.id] = (p.c.kills[m.def.id] || 0) + 1; if (!m.add) questEvent(p, 'kill', m.def.id, 1, m.def.fam);
-      const gd = p.c.guildId && G.guilds.get(p.c.guildId); if (gd) { gd.exp += Math.ceil(m.def.exp * .02); const gm = gd.members[p.id]; if (gm) gm.contrib += 1; guildLevel(gd); if (gd.quest.id === 'kills' && !m.add) gd.quest.prog++; }
-      p.dirty = true; send(p, { t: 'char', c: p.c });
+      let gold = 0;
+      publishProgress(p, () => {
+        gainExp(p, m.def.exp * share * bonus * lf * (n > 1 ? n : 1) / (n > 1 ? 1 : 1)); lootFor(p, m, m.add ? .1 : 1); petExpGain(p, m.def.exp * .2);
+        gold = Math.round(rnd(m.def.gold[0], m.def.gold[1]) * (m.add ? .1 : 1) * (1 + petLoot(p))); p.c.gold += gold;
+        p.c.kills[m.def.id] = (p.c.kills[m.def.id] || 0) + 1; if (!m.add) questEvent(p, 'kill', m.def.id, 1, m.def.fam);
+        const gd = p.c.guildId && G.guilds.get(p.c.guildId); if (gd) { gd.exp += Math.ceil(m.def.exp * .02); const gm = gd.members[p.id]; if (gm) gm.contrib += 1; guildLevel(gd); if (gd.quest.id === 'kills' && !m.add) gd.quest.prog++; }
+      }, () => ev(l, { k: 'loot', x: m.x, y: m.y - 10, v: `+${gold}g`, id: p.id }));
     }
   }
   if (m.def.role === 'boss') toLoc(l, { t: 'chat', ch: 'boss', from: '', text: `${m.def.name} wurde besiegt!`, at: now() });
@@ -199,7 +203,6 @@ function playerTick(p: Player, l: LocState, t: number, dt: number) {
   p.summons = p.summons.filter(s => s.until > t);
   // Pet
   petTick(p, l, t, tgtMob);
-  if (t > p.lastSave + 30000 && p.dirty) { p.lastSave = t; G.store.put('chars', c.id, c).then(() => { G.stats.saves++; }); p.dirty = false; }
   // Duell-Timeout
   if (p.duel && t > p.duel.until) { const o = G.players.get(p.duel.opp); p.duel = null; if (o) o.duel = null; sys(p, 'Duell abgebrochen (Zeit).'); }
 }

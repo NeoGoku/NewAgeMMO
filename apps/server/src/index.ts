@@ -13,7 +13,14 @@ async function main() {
   });
   const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
   wss.on('connection', (ws, req) => core.onConnection(ws as any, String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')));
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { log('shutdown'); await core.shutdown(); process.exit(0); });
+  let stopping = false;
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => {
+    if (stopping) return;
+    stopping = true;
+    log('shutdown');
+    try { await core.shutdown(); process.exit(0); }
+    catch (error) { log('shutdown_error', { msg: String(error) }); process.exit(1); }
+  });
   server.listen(PORT, () => log('listening', { port: PORT, locs: Object.keys(LOCS).length, npcs: Object.keys(NPCS).length }));
 }
 main().catch(e => { console.error(e); process.exit(1); });

@@ -1,9 +1,51 @@
 import { MemoryStore } from '../../../server/src/store';
-/** Solo-Speicher im Browser: Arbeitsspeicher + IndexedDB-Persistenz (gesamter Datenstand, entprellt). */
+import { WriteOrder } from '../../../server/src/write-order';
+
+/** Keep the existing IndexedDB format and confirm writes only after commit. */
 export class IdbStore extends MemoryStore {
-  kind = 'indexeddb'; private t: any = null;
-  private db(): Promise<IDBDatabase> { return new Promise((res, rej) => { const r = indexedDB.open('newagemmo-solo', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-  async init() { try { const db = await this.db(); const v = await new Promise<any>(res => { const q = db.transaction('kv').objectStore('kv').get('data'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); if (v) this.data = v; } catch { /* ohne Persistenz weiter */ } }
-  protected touch(c: string) { super.touch(c); if (!this.t) this.t = setTimeout(() => { this.t = null; void this.flush(); }, 2000); }
-  async flush() { if (!this.dirty) return; this.dirty = false; try { const db = await this.db(); db.transaction('kv', 'readwrite').objectStore('kv').put(this.data, 'data'); } catch { /* */ } }
+  kind = 'indexeddb';
+  private connection!: IDBDatabase;
+  private writes = new WriteOrder();
+  private timer?: ReturnType<typeof setTimeout>;
+
+  async init() {
+    this.connection = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('newagemmo-solo', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('kv');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const saved = await new Promise<typeof this.data | undefined>((resolve, reject) => {
+      const request = this.connection.transaction('kv').objectStore('kv').get('data');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    if (saved) this.data = saved;
+  }
+
+  protected touch(collection: string) {
+    super.touch(collection);
+    this.timer ??= setTimeout(() => {
+      this.timer = undefined;
+      void this.flush().catch(error => console.error('solo_store_flush', error));
+    }, 2000);
+  }
+
+  flush() {
+    return this.writes.run('data', async () => {
+      if (!this.dirty) return;
+      this.dirty = false;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const transaction = this.connection.transaction('kv', 'readwrite');
+          transaction.oncomplete = () => resolve();
+          transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB-Transaktion abgebrochen'));
+          transaction.objectStore('kv').put(this.data, 'data');
+        });
+      } catch (error) {
+        this.dirty = true;
+        throw error;
+      }
+    });
+  }
 }

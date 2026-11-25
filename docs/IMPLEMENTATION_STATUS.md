@@ -1,4 +1,9 @@
 # Implementierungsstatus (ehrlich, Stand Alpha 0.1)
+
+## Persistenz auf dem Entwicklungsbranch
+- Kampf-Fortschritt und Logout werden nach erfolgreicher Speicherung bestätigt. Dateispeicher und PostgreSQL/PostGIS sind mit dem neuen Levelaufstieg-/Reconnect-Test geprüft. Solo-Worker und IndexedDB-Wiederherstellung sind im Chromium-Build unter `/NewAgeMMO/` geprüft.
+- Die Geräteprüfung und der Nachweis der Veröffentlichung dieses Stands stehen aus. Einzelne Dokumente werden geordnet geschrieben. Systemübergreifende Wirtschaftsaktionen benötigen weiterhin echte Mehrdokument-Transaktionen.
+
 Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilweise · ✖ offen
 
 **Geprüft durch Ausführung:** `npm run typecheck`, `npm run build`, `npm test` (Server-Integrationstest, 28 Prüfungen: Registrierung, Charakter, Reise, Kampf, EXP/Gold, Persistenz nach Reconnect, 2 Spieler/Chat, Ablehnungen), Browser-E2E mit Chromium (Titel → Account → Charaktererstellung → Spiel → Reise → Kampf/Tod, keine Konsolenfehler).

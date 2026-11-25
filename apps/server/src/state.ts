@@ -10,7 +10,7 @@ export interface Player {
   target: string | null; auto: boolean; autoFarm: { until: number; hx: number; hy: number } | null; atkAt: number; cd: Record<string, number>; fx: Fx[];
   partyId: string | null; combatUntil: number; travel: { to: string; until: number; from: string } | null; gather: { uid: string; until: number } | null; pending: { kind: 'gather' | 'crate'; uid: string } | null;
   emote?: { k: string; until: number }; rid: number; tokens: number; tokAt: number; summons: { kind: string; until: number; next: number; pow: number }[]; dead: boolean; deadUntil: number;
-  st: Derived; pvpSt: Derived | null; mods: any; duel: { opp: string; until: number } | null; trade: Trade | null; lastChat: number; lastSave: number; evq: EvtView[]; petAt: number; hits: number; resAcc: number;
+  st: Derived; pvpSt: Derived | null; mods: any; duel: { opp: string; until: number } | null; trade: Trade | null; lastChat: number; evq: EvtView[]; petAt: number; hits: number; resAcc: number;
   houseId: string | null; houseFloor: number; online: boolean; shield: number; lastMsgSec: number; stunnedUntil: number; invites: { kind: string; from: string; until: number; data?: any }[]; dirty: boolean; lastAct: number; geo?: GeoState; inScene?: boolean;
 }
 export interface GeoState { on: boolean; gps: boolean; visible: boolean; lat: number; lon: number; has: boolean; mode: string; dest: { lat: number; lon: number } | null; lastT: number; strikes: number[]; lockUntil: number; flags: string[]; lastPush: number; day: number; dayM: number; visited: Set<string> }
@@ -32,6 +32,24 @@ export const rint = (a: number, b: number) => Math.floor(rnd(a, b + 1));
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 let useq = 0; export const uid = (p = 'u') => `${p}${Date.now().toString(36)}${(useq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 export const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, (a.y - b.y) * 1.6);
-export function send(p: Player | undefined, m: any) { if (p && p.online && p.ws.readyState === 1) { try { p.ws.send(JSON.stringify(m)); } catch { /* verbindung weg */ } } }
+const deferred = new WeakMap<Player, string[]>();
+export function deferMessages(p: Player, update: () => void): () => void {
+  const messages: string[] = [];
+  deferred.set(p, messages);
+  try { update(); } finally { deferred.delete(p); }
+  return () => { for (const message of messages) sendRaw(p, message); };
+}
+function sendRaw(p: Player, message: string) {
+  if (p.online && p.ws.readyState === 1) {
+    try { p.ws.send(message); } catch { /* Verbindung getrennt */ }
+  }
+}
+export function send(p: Player | undefined, m: any) {
+  if (!p?.online) return;
+  const messages = deferred.get(p);
+  const message = JSON.stringify(m);
+  if (messages) messages.push(message);
+  else sendRaw(p, message);
+}
 export const sys = (p: Player | undefined, text: string, kind = 'sys') => send(p, { t: 'chat', ch: kind, from: '', text, at: now() });
 export function toLoc(l: LocState, m: any) { const s = JSON.stringify(m); for (const p of l.players) if (p.online && p.ws.readyState === 1) p.ws.send(s); }

@@ -1,3 +1,5 @@
+import { pendingReward, saveCharacter } from './character-save';
+import { WriteOrder } from './write-order';
 import { NAME_RE, CLASS_IDS, BAL, derive, type Look, type ClassId } from '@nam/shared';
 import { validateData, LOCS, NPCS } from '@nam/game-data';
 import type { Store } from './store'; import { G, now, send, sys, toLoc, uid, type Player, type Account } from './state';
@@ -15,18 +17,42 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
   G.store = store; await G.store.init(); log('store', { kind: G.store.kind });
   for (const c of await G.store.all<any>('chars')) G.chars.set(c.id, c); for (const g of await G.store.all<any>('guilds')) G.guilds.set(g.id, g); for (const h of await G.store.all<any>('houses')) { G.houses.set(h.id, h); if (h.geo) G.store.geoUpsert?.('house:' + h.id, 'house', h.geo.lat, h.geo.lon, { owner: h.ownerName }); } for (const l of await G.store.all<any>('market')) G.market.set(l.id, l);
   initWorld(); log('world', { locs: G.locs.size, chars: G.chars.size, guilds: G.guilds.size, houses: G.houses.size });
+  const sessions = new WriteOrder();
+  const accounts = new WriteOrder();
+  const messages = new WriteOrder();
+  let stopping = false;
   function onConnection(ws: SockLike, ip = '') {
     const conn: Conn = { ws, ip, rid: 0, tokens: 60, tokAt: now() };
+    const connectionId = uid('conn');
     send({ online: true, ws } as any, { t: 'hello', v: 1, server: 'NewAgeMMO', time: now() });
-    ws.on('message', (raw) => { const t = now(); conn.tokens = Math.min(60, conn.tokens + (t - conn.tokAt) / 1000 * 30); conn.tokAt = t; if (conn.tokens < 1) return; conn.tokens--; G.stats.msgs++; let m: any; try { m = JSON.parse(String(raw)); } catch { return; } if (!m || typeof m.t !== 'string') return; onMsg(conn, m).catch(e => { log('error', { msg: String(e?.stack || e).slice(0, 300) }); }); });
-    ws.on('close', () => { if (conn.p && conn.p.ws === ws) logout(conn.p); });
+    ws.on('message', (raw) => { const t = now(); conn.tokens = Math.min(60, conn.tokens + (t - conn.tokAt) / 1000 * 30); conn.tokAt = t; if (conn.tokens < 1) return; conn.tokens--; G.stats.msgs++; let m: any; try { m = JSON.parse(String(raw)); } catch { return; } if (!m || typeof m.t !== 'string') return; void messages.run(connectionId, async () => {
+      if (!stopping && ws.readyState === 1) await onMsg(conn, m);
+    }).catch(e => {
+      log('error', { msg: String(e?.stack || e).slice(0, 300) });
+      reply(conn, m, 'Serverfehler beim Speichern oder Verarbeiten');
+    }); });
+    ws.on('close', () => {
+      void messages.run(connectionId, async () => {
+        const p = conn.p;
+        if (p) await sessions.run(p.id, () => logout(p));
+      }).catch(e => log('logout_error', { msg: String(e) }));
+    });
   }
   const reply = (conn: Conn, m: any, r: any) => { const out = typeof r === 'string' ? { t: 'err', rid: m.rid, err: r } : { t: 'ok', rid: m.rid, ...(r && typeof r === 'object' ? r : {}) }; conn.ws.readyState === 1 && conn.ws.send(JSON.stringify(out)); };
   async function onMsg(conn: Conn, m: any) {
     const ws = conn.ws; const R = (r: any) => reply(conn, m, r);
     if (m.t === 'register' || m.t === 'login' || m.t === 'resume') {
-      const res: any = m.t === 'register' ? await register(String(m.user || ''), String(m.pass || '')) : m.t === 'login' ? await login(String(m.user || ''), String(m.pass || ''), conn.ip) : await resume(String(m.token || ''));
-      if (res.err) return R(res.err); conn.acc = res.acc; if (m.t === 'resume' && !res.token) { /* Token bleibt */ } else await G.store.put('accounts', res.acc.name.toLowerCase(), res.acc);
+      if (conn.p) return R('Zuerst Charakter abmelden');
+      const user = String(m.user || '');
+      const pass = String(m.pass || '');
+      const res: any = m.t === 'resume' ? await resume(String(m.token || '')) :
+        await accounts.run(user.toLowerCase(), async () => {
+          const result = m.t === 'register' ? await register(user, pass) : await login(user, pass, conn.ip);
+          if (!result.err) await G.store.flush();
+          return result;
+        });
+      if (res.err) return R(res.err);
+      conn.acc = res.acc;
       return R({ token: res.token || m.token, user: res.acc.name, chars: charList(res.acc), admin: !!res.acc.admin });
     }
     if (!conn.acc) return R('Nicht angemeldet');
@@ -36,28 +62,63 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
       case 'createChar': {
         const mine = [...G.chars.values()].filter(c => c.accountId === conn.acc!.id); if (mine.length >= 3) return R('Maximal 3 Charakterplätze'); const name = String(m.name || '').trim(); if (!NAME_RE.test(name)) return R('Name: 3–16 Zeichen (Buchstaben, Zahlen, _ - Leerzeichen)');
         if ([...G.chars.values()].some(c => c.name.toLowerCase() === name.toLowerCase())) return R('Name bereits vergeben'); if (!CLASS_IDS.includes(m.cls)) return R('Ungültige Klasse'); if (!LOOK_OK(m.look)) return R('Ungültiges Aussehen');
-        const c = newChar(conn.acc.id, name, m.cls as ClassId, m.look); G.chars.set(c.id, c); await G.store.put('chars', c.id, c); log('char_created', { cls: c.cls }); return R({ chars: charList(conn.acc), id: c.id });
+        const c = newChar(conn.acc.id, name, m.cls as ClassId, m.look);
+        G.chars.set(c.id, c);
+        try {
+          await G.store.put('chars', c.id, c);
+          await G.store.flush();
+        } catch (error) {
+          G.chars.delete(c.id);
+          throw error;
+        }
+        log('char_created', { cls: c.cls }); return R({ chars: charList(conn.acc), id: c.id });
       }
-      case 'deleteChar': { const c = G.chars.get(String(m.id)); if (!c || c.accountId !== conn.acc.id) return R('Nicht gefunden'); if (G.players.get(c.id)?.online) return R('Charakter ist online'); if (m.confirm !== c.name) return R('Name zur Bestätigung eingeben'); G.chars.delete(c.id); await G.store.del('chars', c.id); return R({ chars: charList(conn.acc) }); }
-      case 'enter': {
-        const c = G.chars.get(String(m.id)); if (!c || c.accountId !== conn.acc.id) return R('Nicht gefunden'); const old = G.players.get(c.id); if (old?.online) { old.ws.close(); await logout(old); }
-        const p = makePlayer(c, ws, conn.acc); conn.p = p; G.players.set(p.id, p); G.byName.set(c.name.toLowerCase(), p); const away = Math.max(0, now() - c.lastSeen); dailyReset(p); offlinePets(p, away); recalc(p);
+      case 'deleteChar': return sessions.run(String(m.id), async () => {
+        const c = G.chars.get(String(m.id));
+        if (!c || c.accountId !== conn.acc!.id) return R('Nicht gefunden');
+        if (G.players.has(c.id)) return R('Charakter ist online');
+        if (m.confirm !== c.name) return R('Name zur Bestätigung eingeben');
+        G.chars.delete(c.id);
+        try {
+          await G.store.del('chars', c.id);
+          await G.store.flush();
+        } catch (error) {
+          G.chars.set(c.id, c);
+          throw error;
+        }
+        return R({ chars: charList(conn.acc!) });
+      });
+      case 'enter': return sessions.run(String(m.id), async () => {
+        if (stopping || ws.readyState !== 1) return;
+        if (conn.p?.online) return R('Zuerst Charakter abmelden');
+        const c = G.chars.get(String(m.id)); if (!c || c.accountId !== conn.acc!.id) return R('Nicht gefunden'); const old = G.players.get(c.id);
+        if (old?.online && old.ws.readyState === 1) return R('Charakter ist bereits online');
+        if (old) await logout(old);
+        if (stopping || ws.readyState !== 1) return;
+        const p = makePlayer(c, ws, conn.acc!); conn.p = p; G.players.set(p.id, p); G.byName.set(c.name.toLowerCase(), p); const away = Math.max(0, now() - c.lastSeen); dailyReset(p); offlinePets(p, away); recalc(p);
         if (c.hp <= 1 && c.level >= 1 && c.hp < 1) c.hp = Math.ceil(p.st.maxHp * .5); if (LOCS[c.loc].kind === 'arena' || LOCS[c.loc].pvp) c.loc = c.choices.respawn || 'aurelia_plaza'; const loc = G.locs.get(c.loc) ? c.loc : 'aurelia_plaza'; p.loc = loc; G.locs.get(loc)!.players.add(p); p.x = p.dx = c.x || 50; p.y = p.dy = c.y || 78; c.hp = Math.min(Math.max(c.hp, 1), p.st.maxHp); if (!c.activePet && c.pets.length) { /* keins */ }
         const done = claimCrafts(p); R({ char: c, loc, away, craftsDone: done }); send(p, { t: 'enter', loc, x: p.x, y: p.y }); send(p, { t: 'quests', q: c.quests, done: c.questsDone }); sys(p, `Willkommen zurück, ${c.name}!`); if (c.guildId) { const g = G.guilds.get(c.guildId); if (g) sys(p, `Gilde ${g.name}: ${g.motd}`, 'guild'); } if (c.mail.length) sys(p, `Du hast ${c.mail.length} Nachricht(en) im Postfach.`, 'loot'); return;
+      });
+      case 'logout': {
+        const p = conn.p;
+        if (p) await sessions.run(p.id, () => logout(p));
+        conn.p = undefined;
+        return R({ chars: charList(conn.acc) });
       }
-      case 'logout': { if (conn.p) await logout(conn.p, true); conn.p = undefined; return R({ chars: charList(conn.acc) }); }
       case 'admin': { if (!conn.acc.admin) return R('Keine Berechtigung'); return R(adminCmd(m)); }
     }
-    const p = conn.p; if (!p || p.ws !== ws) return R('Kein Charakter aktiv'); p.lastAct = now();
+    const p = conn.p; if (!p?.online || G.players.get(p.id) !== p || p.ws !== ws) return R('Kein Charakter aktiv'); p.lastAct = now();
     const h = H[m.t]; if (!h) return R('Unbekannter Befehl: ' + m.t); let res: any; try { res = h(p, m); } catch (e: any) { log('handler_error', { t: m.t, e: String(e?.stack || e).slice(0, 300) }); return R('Serverfehler'); }
+    const saving = pendingReward(p);
+    if (saving) await saving;
     if (!(typeof res === 'string')) { if (!NO_CHAR.has(m.t) || p.dirty) send(p, { t: 'char', c: p.c }); }
     if (m.rid !== undefined) R(res === undefined || res === null ? {} : res);
   }
   function charList(acc: Account) { return [...G.chars.values()].filter(c => c.accountId === acc.id).map(summary); }
-  function makePlayer(c: any, ws: SockLike, acc: Account): Player { return { id: c.id, c, ws, acc, loc: c.loc, x: 50, y: 78, dx: 50, dy: 78, target: null, auto: false, autoFarm: null, atkAt: 0, cd: {}, fx: [], partyId: null, combatUntil: 0, travel: null, gather: null, pending: null, rid: 0, tokens: 30, tokAt: now(), summons: [], dead: false, deadUntil: 0, st: derive(c.cls, 1, c.attrs, { atk: 0, def: 0, mdef: 0, hp: 0, res: 0, attrs: {} }), pvpSt: null, mods: {}, duel: null, trade: null, lastChat: 0, lastSave: now(), evq: [], petAt: 0, hits: 0, resAcc: 0, houseId: null, houseFloor: 0, online: true, shield: 0, lastMsgSec: 0, stunnedUntil: 0, invites: [], dirty: false, lastAct: now() }; }
-  async function logout(p: Player, keepSocket = false) {
-    if (!p.online && !keepSocket) return; p.online = false; if (p.trade) cancelTrade(p.trade); leaveParty(p); leaveHouseSilent(p); G.locs.get(p.loc)?.players.delete(p); if (p.travel) { p.loc = p.travel.to; p.c.loc = p.loc; }
-    p.c.lastSeen = now(); p.c.x = p.x; p.c.y = p.y; p.c.loc = p.loc; if (p.duel) { const o = G.players.get(p.duel.opp); if (o) o.duel = null; p.duel = null; } if (p.dead) { p.c.hp = Math.ceil(p.st.maxHp * .5); } await G.store.put('chars', p.c.id, p.c); if (G.players.get(p.id) === p) { G.players.delete(p.id); G.byName.delete(p.c.name.toLowerCase()); }
+  function makePlayer(c: any, ws: SockLike, acc: Account): Player { return { id: c.id, c, ws, acc, loc: c.loc, x: 50, y: 78, dx: 50, dy: 78, target: null, auto: false, autoFarm: null, atkAt: 0, cd: {}, fx: [], partyId: null, combatUntil: 0, travel: null, gather: null, pending: null, rid: 0, tokens: 30, tokAt: now(), summons: [], dead: false, deadUntil: 0, st: derive(c.cls, 1, c.attrs, { atk: 0, def: 0, mdef: 0, hp: 0, res: 0, attrs: {} }), pvpSt: null, mods: {}, duel: null, trade: null, lastChat: 0, evq: [], petAt: 0, hits: 0, resAcc: 0, houseId: null, houseFloor: 0, online: true, shield: 0, lastMsgSec: 0, stunnedUntil: 0, invites: [], dirty: false, lastAct: now() }; }
+  async function logout(p: Player) {
+    if (G.players.get(p.id) !== p) return; p.online = false; if (p.trade) cancelTrade(p.trade); leaveParty(p); leaveHouseSilent(p); G.locs.get(p.loc)?.players.delete(p); if (p.travel) { p.loc = p.travel.to; p.c.loc = p.loc; }
+    p.c.lastSeen = now(); p.c.x = p.x; p.c.y = p.y; p.c.loc = p.loc; if (p.duel) { const o = G.players.get(p.duel.opp); if (o) o.duel = null; p.duel = null; } if (p.dead) { p.c.hp = Math.ceil(p.st.maxHp * .5); } await saveCharacter(p, true); if (G.players.get(p.id) === p) { G.players.delete(p.id); G.byName.delete(p.c.name.toLowerCase()); }
     log('logout', { name: p.c.name, lvl: p.c.level });
   }
   function adminCmd(m: any) {
@@ -65,12 +126,32 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
     switch (m.cmd) { case 'announce': for (const p of G.players.values()) sys(p, '📢 ' + String(m.text || '').slice(0, 200), 'boss'); return {}; case 'gold': if (!t) return 'Spieler offline'; t.c.gold += Math.floor(Number(m.n) || 0); send(t, { t: 'char', c: t.c }); return {}; case 'give': if (!t) return 'Spieler offline'; invAdd(t.c, String(m.id), Math.max(1, Number(m.n) | 0 || 1)); send(t, { t: 'char', c: t.c }); return {}; case 'kick': if (!t) return 'Spieler offline'; t.ws.close(); return {}; case 'respawn': respawnAll(); return {}; case 'backup': return { dir: 'siehe Server-Log' }; case 'stats': return { online: G.players.size, tickMs: G.stats.tickMs, msgs: G.stats.msgs }; }
     return 'Unbekannter Admin-Befehl';
   }
-  setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, 1000);
-  setInterval(() => { try { worldTick(); } catch (e: any) { log('tick_error', { e: String(e?.stack || e).slice(0, 400) }); } }, BAL.tickMs);
-  setInterval(() => { for (const p of G.players.values()) if (p.online && p.dirty) { p.dirty = false; G.store.put('chars', p.c.id, p.c); } for (const p of G.players.values()) if (p.online && now() - p.lastAct > 20 * 60e3) p.ws.close(); for (const [id, pt] of G.parties) if (pt.members.length < 2) G.parties.delete(id); for (const t of G.players.values()) t.invites = t.invites.filter(i => i.until > now()); }, 15000);
-  setInterval(() => { marketExpire(); guildWarCheck(); }, 30000); setInterval(() => { try { worldEvent(); } catch { /* */ } }, 25 * 60e3);
-  setInterval(() => { G.store.flush(); }, 5000); setInterval(() => { G.store.backup().then(d => log('backup', { d })); }, 6 * 3600e3);
-  async function shutdown() { for (const p of [...G.players.values()]) await logout(p); await G.store.flush(); }
+  const timers = [
+    setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, 1000),
+    setInterval(() => { try { worldTick(); } catch (e: any) { log('tick_error', { e: String(e?.stack || e).slice(0, 400) }); } }, BAL.tickMs),
+    setInterval(() => {
+      for (const p of G.players.values()) {
+        if (!p.online) void sessions.run(p.id, () => logout(p)).catch(e => log('logout_error', { msg: String(e) }));
+        else if (p.dirty) void saveCharacter(p).catch(e => log('save_error', { msg: String(e) }));
+        if (p.online && now() - p.lastAct > 20 * 60e3) p.ws.close();
+        p.invites = p.invites.filter(i => i.until > now());
+      }
+      for (const [id, party] of G.parties) if (party.members.length < 2) G.parties.delete(id);
+    }, 15000),
+    setInterval(() => { marketExpire(); guildWarCheck(); }, 30000),
+    setInterval(() => { try { worldEvent(); } catch { /* */ } }, 25 * 60e3),
+    setInterval(() => { void G.store.flush().catch(e => log('flush_error', { msg: String(e) })); }, 5000),
+    setInterval(() => { void G.store.backup().then(d => log('backup', { d }), e => log('backup_error', { msg: String(e) })); }, 6 * 3600e3)
+  ];
+  async function shutdown() {
+    stopping = true;
+    timers.forEach(clearInterval);
+    await messages.drain();
+    const results = await Promise.allSettled([...G.players.values()].map(p => sessions.run(p.id, () => logout(p))));
+    await G.store.flush();
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  }
   return { onConnection, shutdown };
 }
 void uid; void toLoc; void LOCS; void NPCS;

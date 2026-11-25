@@ -7,8 +7,8 @@ Kostenloses, grafikbasiertes Point-and-Click-MMORPG im alternativen Jahr 2030 (s
 |---|---|
 | **Browser (GitHub Pages)** | https://neogoku.github.io/NewAgeMMO/ |
 | **Windows-PWA** | Link oben in Edge/Chrome öffnen → Adressleiste „App installieren“ (Start → eigenes Fenster) |
-| **Android-APK** | https://github.com/NeoGoku/NewAgeMMO/releases/latest (Datei `NewAgeMMO-*.apk`) |
-| **Releases** | https://github.com/NeoGoku/NewAgeMMO/releases (aktuell: [v0.2.4](https://github.com/NeoGoku/NewAgeMMO/releases/tag/v0.2.4), enthält APK + Web-ZIP) |
+| **Android-APK** | [APK v0.2.6](https://github.com/NeoGoku/NewAgeMMO/releases/download/v0.2.6/NewAgeMMO-v0.2.6.apk) |
+| **Releases** | [Releases](https://github.com/NeoGoku/NewAgeMMO/releases) · [Web-ZIP v0.2.6](https://github.com/NeoGoku/NewAgeMMO/releases/download/v0.2.6/NewAgeMMO-web-v0.2.6.zip) |
 
 > Hinweis zur Verfügbarkeit: Die Links werden erst aktiv, nachdem (1) GitHub Pages einmalig auf „GitHub Actions“ gestellt ist (Settings → Pages → Source) und (2) der Workflow auf einem `v*`-Tag bzw. `main` gelaufen ist. Siehe [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -34,7 +34,7 @@ docker compose -f infrastructure/docker-compose.yml up --build   # http://localh
 Der Server liefert den gebauten Web-Client (`apps/web/dist`) mit aus. Die APK nutzt eine **konfigurierbare Serveradresse** (Optionen → Serveradresse, z. B. `wss://dein-server`).
 
 ## Reale Erde (Geo)
-Menü → 🌍 *Erde*: MapLibre-Karte mit OpenStreetMap-Kacheln. Spielorte sind real verankert (Aurelia = Berlin, Port Nocturne = Hamburg, Kristallspitze = Zürich, Arena/Valdris = Rom, Himmelsturm = Zugspitze, Void-Herz = Himalaya …). Monster, Ressourcen, Dungeoneingänge und Quellen entstehen dynamisch je Rasterzelle und Zeitfenster (Stufe steigt mit Entfernung zu Städten). Bewegung per **GPS** (echte Schritte geben Trainings-EXP, max. 10 km/Tag) oder **virtuell** (Tippen auf die Karte). Datenschutz: Opt-in, andere sehen nur ≈100 m gerundete Positionen, präzise Position nur im Arbeitsspeicher, „Meine Standortdaten löschen“ jederzeit. Manipulationsschutz: serverseitige Geschwindigkeits-/Teleport-/Genauigkeitsprüfung mit Sperre nach wiederholten Verstößen. PostGIS wird im PostgreSQL-Betrieb für Geo-Objekte genutzt (Migration `003_postgis.sql`).
+Die Hauptansicht ist eine MapLibre-Karte mit OpenStreetMap-Kacheln. Über die Modusanzeige im HUD wechselst du zwischen GPS und virtueller Bewegung. Spielorte sind real verankert (Aurelia = Berlin, Port Nocturne = Hamburg, Kristallspitze = Zürich, Arena/Valdris = Rom, Himmelsturm = Zugspitze, Void-Herz = Himalaya …). Monster, Ressourcen, Dungeoneingänge und Quellen entstehen dynamisch je Rasterzelle und Zeitfenster (Stufe steigt mit Entfernung zu Städten). Bewegung per **GPS** (echte Schritte geben Trainings-EXP, max. 10 km/Tag) oder **virtuell** (Tippen auf die Karte). Datenschutz: Opt-in, andere sehen nur ≈100 m gerundete Positionen, präzise Position nur im Arbeitsspeicher, „Meine Standortdaten löschen“ jederzeit. Manipulationsschutz: serverseitige Geschwindigkeits-/Teleport-/Genauigkeitsprüfung mit Sperre nach wiederholten Verstößen. PostGIS wird im PostgreSQL-Betrieb für Geo-Objekte genutzt (Migration `003_postgis.sql`).
 
 ## Aufbau
 

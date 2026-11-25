@@ -1,5 +1,5 @@
 # Veröffentlichung & Hosting
-**Automatisiert (GitHub Actions):** `pages.yml` baut/veröffentlicht die Browser-Version (Pages), `release.yml` baut bei Tags `v*` die Debug-APK + PWA-ZIP und legt ein GitHub Release an, `ci.yml` testet (inkl. PostgreSQL-Job).
+**Automatisiert (GitHub Actions):** `pages.yml` baut/veröffentlicht die Browser-Version (Pages), `release.yml` baut nach Code-Änderungen auf `main` oder bei Tags `v*` die Debug-APK + PWA-ZIP und legt ein GitHub Release an, `ci.yml` testet (inkl. PostgreSQL-Job).
 ## Einmalig nötig (kann nicht automatisiert werden, benötigt Repo-Admin)
 1. **Pages aktivieren:** Repo → Settings → Pages → *Source: GitHub Actions*. (Das Workflow-Token darf Pages nicht selbst aktivieren.) Außerdem unter Settings → Environments → github-pages ggf. Tags `v*` als erlaubte Deployment-Quelle ergänzen.
 2. **Release auslösen:** Tag `vX.Y.Z` pushen (oder Actions → *Release* → Run). Pages deployt von `main`/Tags.
