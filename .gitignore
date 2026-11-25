@@ -4,6 +4,6 @@ data/*.json
 data/
 *.log
 .env
-android/
+/android/
 apps/android/android
 apps/android/www

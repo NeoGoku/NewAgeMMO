@@ -19,6 +19,7 @@ jobs:
           VITE_DEFAULT_SERVER: ${{ vars.NAM_SERVER_URL }}
       - run: cp apps/web/dist/index.html apps/web/dist/404.html
       - uses: actions/configure-pages@v5
+        with: { enablement: true }
       - uses: actions/upload-pages-artifact@v3
         with: { path: apps/web/dist }
   deploy:

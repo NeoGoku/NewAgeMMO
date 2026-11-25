@@ -1,0 +1,1 @@
+{ "appId": "de.newagemmo.app", "appName": "NewAgeMMO", "webDir": "../web/dist", "backgroundColor": "#0b0f1e", "android": { "allowMixedContent": true }, "server": { "androidScheme": "http", "cleartext": true } }
