@@ -16,7 +16,7 @@ export async function enterGame(id: string): Promise<string | null> {
   if (r.away > 60000) toast(`Willkommen zurück! Du warst ${Math.round(r.away / 60000)} Min. weg.`); return null;
 }
 export async function logoutChar() { const r = await net.req('logout'); if (r.t === 'err') { toast(r.err); return false; } set({ screen: 'chars', chars: r.chars, char: null, snap: null, panel: null, dialog: null }); stopGameAudio(); return true; }
-export function logoutAccount() { net.close(); saveToken(net.url, ''); set({ screen: 'title', token: '', user: '', chars: [], char: null }); stopGameAudio(); }
+export function logoutAccount() { net.close(); saveToken(net.url, ''); set({ screen: 'title', token: '', user: '', admin: false, chars: [], char: null }); stopGameAudio(); }
 function stopGameAudio() { audio.stopMusic(); audio.setAmbient('clear'); }
 import { LOCS } from '@nam/game-data';
 export const themeOf = (loc: string) => LOCS[loc]?.theme || 'city';
@@ -28,10 +28,17 @@ async function reconnectLoop() {
   const id = state.char?.id; for (let i = 0; i < 40 && state.screen === 'game'; i++) { await new Promise(r => setTimeout(r, Math.min(5000, 800 + i * 400))); const e = await tryResumeSilent(); if (!e && id) { const r = await net.req('enter', { id }); if (r.t !== 'err') { set({ char: r.char, conn: 'ok', screen: 'game', snap: null }); reconnecting = false; toast('Verbindung wiederhergestellt', 'ok'); return; } } }
   reconnecting = false; set({ screen: 'title', conn: 'lost' }); stopGameAudio(); toast('Verbindung verloren', 'err');
 }
-async function tryResumeSilent() { try { await net.connect(state.settings.server); } catch (e: any) { return e.message; } const r = await net.req('resume', { token: state.token }); return r.t === 'err' ? r.err : null; }
+async function tryResumeSilent() { try { await net.connect(state.settings.server); } catch (e: any) { return e.message; } const r = await net.req('resume', { token: state.token }); if (r.t === 'err') return r.err; set({ admin: !!r.admin }); return null; }
 const KIND_SFX: Record<string, string> = { crit: 'crit', dmg: 'hit', heal: 'heal', miss: 'miss', block: 'block' };
 net.on((m: Msg) => {
   switch (m.t) {
+    case 'kicked': {
+      net.close();
+      stopGameAudio();
+      set({ screen: 'title', admin: false, char: null, panel: null, dialog: null, snap: null, travel: null, died: null, inScene: false });
+      toast('Die Moderation hat deine Verbindung getrennt.', 'moderation');
+      break;
+    }
     case 'state': {
       const snapshot = m as StateMsgStrict;
       view.prev = view.snap; view.snap = m; view.snapAt = performance.now();

@@ -1,18 +1,19 @@
 import { pendingReward, saveCharacter } from './character-save';
+import { createAdmin } from './admin';
 import { WriteOrder } from './write-order';
 import { NAME_RE, CLASS_IDS, BAL, GEO, derive, type Look, type ClassId } from '@nam/shared';
 import { validateData, LOCS, NPCS } from '@nam/game-data';
 import type { Store } from './store'; import { G, now, send, sys, toLoc, uid, type Player, type Account } from './state';
-import { initWorld, worldTick, respawnAll, worldEvent } from './game'; import { newChar, recalc, summary, invAdd } from './chars';
+import { initWorld, worldTick, worldEvent } from './game'; import { newChar, recalc, summary } from './chars';
 import { register, login, resume } from './auth'; import { H, NO_CHAR, claimCrafts } from './handlers';
 import { joinLoc } from './world'; import { leaveParty, cancelTrade, guildWarCheck } from './social'; import { offlinePets } from './pethouse'; import { marketExpire } from './market';
 import { dailyReset } from './quests'; import { leaveHouseSilent } from './world';
 import { geoTick } from './geo'; import './social'; import './market'; import './pethouse';
 export interface SockLike { readyState: number; send(d: string): void; close(): void; on(ev: 'message' | 'close', fn: (d?: any) => void): void }
 export const log = (ev: string, d: any = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), ev, ...d }));
-interface Conn { ws: SockLike; ip: string; acc?: Account; p?: Player; rid: number; tokens: number; tokAt: number }
+interface Conn { ws: SockLike; ip: string; acc?: Account; token?: string; p?: Player; rid: number; tokens: number; tokAt: number }
 const LOOK_OK = (l: any): l is Look => l && ['m', 'f'].includes(l.gender) && [l.face, l.body, l.hair, l.tattoo].every((n: any) => Number.isInteger(n) && n >= 0 && n < 12) && /^#[0-9a-fA-F]{6}$/.test(l.hairColor) && /^#[0-9a-fA-F]{6}$/.test(l.skin);
-export async function createCore(store: Store, opts: { backupEveryMs?: number } = {}) {
+export async function createCore(store: Store, opts: { backupEveryMs?: number; adminUsers?: () => string | undefined } = {}) {
   const prob = validateData(); if (prob.length) throw new Error('Spieldaten-Fehler: ' + prob.slice(0, 10).join('; '));
   G.store = store; await G.store.init(); log('store', { kind: G.store.kind });
   for (const c of await G.store.all<any>('chars')) G.chars.set(c.id, c); for (const g of await G.store.all<any>('guilds')) G.guilds.set(g.id, g); for (const h of await G.store.all<any>('houses')) { G.houses.set(h.id, h); if (h.geo) G.store.geoUpsert?.('house:' + h.id, 'house', h.geo.lat, h.geo.lon, { owner: h.ownerName }); } for (const l of await G.store.all<any>('market')) G.market.set(l.id, l);
@@ -20,6 +21,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
   const sessions = new WriteOrder();
   const accounts = new WriteOrder();
   const messages = new WriteOrder();
+  const admin = opts.adminUsers && createAdmin(store, opts.adminUsers);
   let stopping = false;
   function onConnection(ws: SockLike, ip = '') {
     const conn: Conn = { ws, ip, rid: 0, tokens: 60, tokAt: now() };
@@ -47,13 +49,16 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
       const pass = String(m.pass || '');
       const res: any = m.t === 'resume' ? await resume(String(m.token || '')) :
         await accounts.run(user.toLowerCase(), async () => {
+          if (m.t === 'register' && admin?.allows(user)) return { err: 'Benutzername bereits vergeben' };
           const result = m.t === 'register' ? await register(user, pass) : await login(user, pass, conn.ip);
           if (!result.err) await G.store.flush();
           return result;
         });
       if (res.err) return R(res.err);
       conn.acc = res.acc;
-      return R({ token: res.token || m.token, user: res.acc.name, chars: charList(res.acc), admin: !!res.acc.admin });
+      const token = res.token || m.token;
+      if (admin) conn.token = token;
+      return R({ token, user: res.acc.name, chars: charList(res.acc), admin: admin?.allows(res.acc.name) ?? false });
     }
     if (!conn.acc) return R('Nicht angemeldet');
     if (typeof m.rid === 'number') { if (m.rid <= conn.rid) return R('Wiederholte Anfrage'); conn.rid = m.rid; }
@@ -105,7 +110,11 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
         conn.p = undefined;
         return R({ chars: charList(conn.acc) });
       }
-      case 'admin': { if (!conn.acc.admin) return R('Keine Berechtigung'); return R(adminCmd(m)); }
+      case 'admin': {
+        if (!admin || !conn.token || !Number.isSafeInteger(m.rid)) return R('Keine Berechtigung');
+        const actor = conn.acc;
+        return R(await admin.handle(actor, m, async () => (await resume(conn.token!)).acc?.id === actor.id));
+      }
     }
     const p = conn.p; if (!p?.online || G.players.get(p.id) !== p || p.ws !== ws) return R('Kein Charakter aktiv'); p.lastAct = now();
     const h = H[m.t]; if (!h) return R('Unbekannter Befehl: ' + m.t); let res: any; try { res = h(p, m, receivedAt); } catch (e: any) { log('handler_error', { t: m.t, e: String(e?.stack || e).slice(0, 300) }); return R('Serverfehler'); }
@@ -120,11 +129,6 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
     if (G.players.get(p.id) !== p) return; p.online = false; if (p.trade) cancelTrade(p.trade); leaveParty(p); leaveHouseSilent(p); G.locs.get(p.loc)?.players.delete(p); if (p.travel) { p.loc = p.travel.to; p.c.loc = p.loc; }
     p.c.lastSeen = now(); p.c.x = p.x; p.c.y = p.y; p.c.loc = p.loc; if (p.duel) { const o = G.players.get(p.duel.opp); if (o) o.duel = null; p.duel = null; } if (p.dead) { p.c.hp = Math.ceil(p.st.maxHp * .5); } await saveCharacter(p, true); if (G.players.get(p.id) === p) { G.players.delete(p.id); G.byName.delete(p.c.name.toLowerCase()); }
     log('logout', { name: p.c.name, lvl: p.c.level });
-  }
-  function adminCmd(m: any) {
-    const t = G.byName.get(String(m.name || '').toLowerCase()); log('admin', { cmd: m.cmd, name: m.name });
-    switch (m.cmd) { case 'announce': for (const p of G.players.values()) sys(p, '📢 ' + String(m.text || '').slice(0, 200), 'boss'); return {}; case 'gold': if (!t) return 'Spieler offline'; t.c.gold += Math.floor(Number(m.n) || 0); send(t, { t: 'char', c: t.c }); return {}; case 'give': if (!t) return 'Spieler offline'; invAdd(t.c, String(m.id), Math.max(1, Number(m.n) | 0 || 1)); send(t, { t: 'char', c: t.c }); return {}; case 'kick': if (!t) return 'Spieler offline'; t.ws.close(); return {}; case 'respawn': respawnAll(); return {}; case 'backup': return { dir: 'siehe Server-Log' }; case 'stats': return { online: G.players.size, tickMs: G.stats.tickMs, msgs: G.stats.msgs }; }
-    return 'Unbekannter Admin-Befehl';
   }
   const timers = [
     setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, GEO.steerTickMs),

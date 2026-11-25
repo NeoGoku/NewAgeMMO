@@ -39,7 +39,10 @@ function character(c: unknown, key: string, owners: Set<unknown>) {
     text(c.look.hairColor) && /^#[\da-f]{6}$/i.test(c.look.hairColor) && text(c.look.skin) && /^#[\da-f]{6}$/i.test(c.look.skin) &&
     record(c.attrs) && numbers(c.attrs, ATTRS) && items(c.inventory) && items(c.stash) && dict(c.equipment, item) &&
     list(c.hotbar, value => value === null || text(value)) && fields(c, ['questsDone', 'friends', 'summons', 'discovered', 'titles'], value => list(value, text)) &&
-    dict(c.quests, q => record(q) && ['active', 'done', 'turned'].includes(String(q.state)) && list(q.prog, number) && number(q.started)) &&
+    dict(c.quests, q => record(q) && ['active', 'done', 'turned'].includes(String(q.state)) && list(q.prog, number) && number(q.started) &&
+      (q.region === undefined || (record(q.region) && number(q.region.lat) && Math.abs(q.region.lat) <= 85 &&
+        number(q.region.lon) && Math.abs(q.region.lon) <= 180 && positiveInt(q.region.radius) &&
+        text(q.region.label) && typeof q.region.virtualOnly === 'boolean'))) &&
     dict(c.rep, number) && dict(c.kills, number) && dict(c.choices, text) && dict(c.prof, p => record(p) && numbers(p, ['lvl', 'exp'])) &&
     list(c.pets, p => record(p) && id(p.uid) && ownId(SPECIES, p.species) && rarity(p.rar) && text(p.name) &&
       numbers(p, ['level', 'exp', 'stage', 'gen', 'energy']) && record(p.stats) && numbers(p.stats, ['atk', 'hp', 'spd'])) &&

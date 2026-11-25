@@ -23,7 +23,8 @@ export interface ItemDef {
 export interface ItemInst { uid: string; id: string; rar: Rarity; qty: number; dur?: number }
 export interface Look { gender: 'm'|'f'; face: number; body: number; hair: number; hairColor: string; tattoo: number; skin: string }
 export interface PetInst { uid: string; species: string; name: string; level: number; exp: number; rar: Rarity; stage: number; gen: number; energy: number; trainStart?: number; hatchAt?: number; stats: { atk: number; hp: number; spd: number } }
-export interface QuestState { state: 'active'|'done'|'turned'; prog: number[]; started: number }
+export interface QuestRegion { lat: number; lon: number; radius: number; label: string; virtualOnly: boolean }
+export interface QuestState { state: 'active'|'done'|'turned'; prog: number[]; started: number; region?: QuestRegion }
 export interface FurniturePlacement { id: string; furn: string; x: number; y: number; rot: number; floor: number }
 export interface CraftJob { id: string; recipe: string; qty: number; start: number; end: number }
 export interface MailItem { id: string; from: string; subject: string; gold: number; items: ItemInst[]; t: number }

@@ -16,9 +16,11 @@ function useCanvas(draw: (c: CanvasRenderingContext2D, w: number, h: number, t: 
 export function Title() {
   const ref = useCanvas((ctx, w, h, t) => { drawBackground(ctx, w, h, 'city', .02 + (t / 600000) % 1 * .0, 'clear', t, 'title'); drawWeather(ctx, w, h, 'rain', t); const x = (t / 40) % (w + 200) - 100; drawCharacter(ctx, x, h * .86, Math.max(.8, h / 600), { cls: 'dual_sword', look: { gender: 'f', face: 1, body: 1, hair: 3, hairColor: '#35e0ff', tattoo: 2, skin: '#e8c0a0' }, eq: { weapon: 'w_dual_sword_3', chest: 'a_chest_cloth_3', head: 'a_head_cloth_3' } as any, facing: 1, t, moving: true, attack: 0 }); });
   const token = useS(s => s.token); const user = useS(s => s.user); const [busy, setBusy] = useState(false);
+  const moderationNotice = useS(s => s.toasts.find(notice => notice.kind === 'moderation'));
   const loadGame = async () => { audio.sfx('click'); if (token) { setBusy(true); const e = await tryResume(); setBusy(false); if (!e) return; } set({ screen: 'auth', authMode: 'login' }); };
   return <div className="app" onPointerDown={() => audio.unlock()}><canvas ref={ref} className="full" /><div className="title">
     <div className="logo">NewAgeMMO</div><div className="tag">Aurelia · Anno 2030 · Magie ist öffentlich</div>
+    {moderationNotice && <div className="card err sm" role="alert">{moderationNotice.text}</div>}
     <div className="menu"><button className="btn pri" onClick={() => { audio.unlock(); audio.sfx('click'); set({ screen: 'auth', authMode: 'register' }); }}>▶ Neues Spiel</button>
       <button className="btn" disabled={busy} onClick={loadGame}>{busy ? 'Verbinde…' : '⟳ Spiel laden'}</button><button className="btn" onClick={() => { audio.sfx('click'); set({ screen: 'options' }); }}>⚙ Optionen</button><button className="btn dng" onClick={() => { audio.sfx('click'); quit(); }}>⏻ Verlassen</button></div>
     <div className="dim xs" style={{ position: 'absolute', bottom: 'calc(10px + var(--sab))' }}>Kostenlos · Keine Echtgeld-Shops · Alles erspielbar · v0.1 Alpha · Modus: {state.settings.server.startsWith('solo') ? 'Solo (lokal im Browser)' : 'Online'}</div></div></div>;

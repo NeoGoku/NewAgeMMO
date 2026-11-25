@@ -4,8 +4,9 @@ import { makeStore } from './store-node'; import { G } from './state'; import { 
 import { configureOsm } from './geo-osm';
 const PORT = Number(process.env.PORT || 8080);
 async function main() {
-  configureOsm(process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter');
-  const core = await createCore(makeStore());
+  const store = makeStore();
+  const core = await createCore(store, { adminUsers: () => process.env.ADMIN_USERS });
+  configureOsm(process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter', store.osmCache);
   const server = http.createServer((req, res) => {
     const cors = { 'access-control-allow-origin': '*' };
     if (req.url === '/health') { res.writeHead(200, { 'content-type': 'application/json', ...cors }); return res.end(JSON.stringify({ ok: true, online: [...G.players.values()].filter(p => p.online).length, tickMs: G.stats.tickMs, uptime: Math.round((Date.now() - G.startedAt) / 1000), store: G.store.kind })); }

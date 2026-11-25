@@ -10,7 +10,7 @@ Kostenloses, grafikbasiertes Point-and-Click-MMORPG im alternativen Jahr 2030 (s
 | **Android-APK** | [Aktueller Release](https://github.com/NeoGoku/NewAgeMMO/releases/latest), Datei `NewAgeMMO-*.apk` |
 | **Releases** | [Release-Archiv](https://github.com/NeoGoku/NewAgeMMO/releases) · Web-ZIP im jeweiligen Release |
 
-> Vor einem APK-Wechsel mit anderer Signatur den Solo-Spielstand in den Titeloptionen exportieren. Details zum Upgrade stehen in der [Android-Dokumentation](apps/android/README.md).
+> Für öffentliche APKs gilt ein festgelegtes Signierzertifikat. Vor dem einmaligen Wechsel von einer anders signierten Alt-APK den Solo-Spielstand in den Titeloptionen exportieren. Details zum Upgrade stehen in der [Android-Dokumentation](apps/android/README.md).
 
 ### Spielmodi – ehrlich erklärt
 - **Solo (Standard auf GitHub Pages/APK):** Der komplette Spielserver läuft lokal im Browser (Web Worker, Spielstand in IndexedDB). Sofort spielbar ohne Server, aber ohne andere Spieler.
@@ -35,9 +35,9 @@ Der Server liefert den gebauten Web-Client (`apps/web/dist`) mit aus. Die APK nu
 
 ## Reale Erde
 
-Die Weltkarte ist die Hauptansicht. Der virtuelle Modus unterstützt Tippen und einen Touch-Joystick. GPS nutzt die bestätigte Geräteposition. Kartenhelligkeit, Kartentyp, Zoom, Drehung und Neigung bleiben gespeichert. Die Satellitenansicht bietet eine globale Übersicht; für Straßen und Gebäude sind Standard und 3D vorgesehen. Die vorhandenen Spielorte bleiben verankert, während regionale NPCs, Monster, Eliten, Ressourcen und Bosse auch außerhalb dieser Orte erscheinen. Der Online-Server kann öffentliche Orientierungspunkte aus OpenStreetMap ergänzen.
+Die Weltkarte ist die Hauptansicht. Der virtuelle Modus unterstützt Tippen und einen Touch-Joystick. GPS nutzt die bestätigte Geräteposition. Wähle zwischen Standard, Underground, Urban, Vintage, Adventure, Cyber, Satellit und 3D City. Kartendesign, Helligkeit, Zoom, Drehung und Neigung bleiben gespeichert. Die Satellitenansicht bietet eine globale Übersicht; für Straßen und Gebäude sind Standard und 3D vorgesehen. Die vorhandenen Spielorte bleiben verankert, während regionale NPCs, Monster, Eliten, Ressourcen und Bosse auch außerhalb dieser Orte erscheinen. Der Online-Server ergänzt öffentliche Orientierungspunkte aus OpenStreetMap und hält sie bei PostgreSQL auch über Neustarts vor.
 
-Über die Questdetails lassen sich Questgeber, Zielgebiet und Abgabe auf der Karte verfolgen. Die GPS-Navigation zeigt die Richtung zum Ziel als Luftlinie. Im virtuellen Modus startet sie eine Route innerhalb der verfügbaren Reichweite.
+Über die Questdetails lassen sich Questgeber, Zielgebiet und Abgabe auf der Karte verfolgen. Die GPS-Navigation zeigt die Richtung zum Ziel als Luftlinie. Im virtuellen Modus startet sie eine Route innerhalb der verfügbaren Reichweite. Die Tagesquest „Die Gegend erkunden“ weist ein serverseitig bestimmtes Zielgebiet in der jeweiligen Region zu.
 
 ## Solo-Spielstand sichern
 

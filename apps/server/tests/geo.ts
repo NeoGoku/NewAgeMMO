@@ -21,6 +21,17 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(requests === 1 && query.includes('[bbox:') && query.includes('out center 80') && !query.includes(String(queryPoint.lat)), 'OSM-Import verwendet eine gerundete, begrenzte Region und bündelt Anfragen');
   const imported = osm.nearby(queryPoint.lat, queryPoint.lon, 1200);
   ok(imported.length === 1 && imported[0].name === 'Testpark' && imported[0].id === 'osm:node:1', 'OSM-Import verwirft entfernte und private Objekte');
+  const regions = new Map();
+  const persistent = {
+    async getRegion(id: string) { return regions.get(id) ?? null; },
+    async putRegion(id: string, region: unknown) { regions.set(id, structuredClone(region)); },
+  };
+  const fixture = async () => Response.json({ elements: [{ type: 'node', id: 1, ...queryPoint, tags: { leisure: 'park', name: 'Testpark' } }] });
+  await new OsmPoints('https://overpass.example/interpreter', fixture, persistent).load(queryPoint.lat, queryPoint.lon);
+  let requestsAfterRestart = 0;
+  const restarted = new OsmPoints('https://overpass.example/interpreter', async () => { requestsAfterRestart++; throw Error('offline'); }, persistent);
+  await restarted.load(queryPoint.lat, queryPoint.lon);
+  ok(requestsAfterRestart === 0 && restarted.nearby(queryPoint.lat, queryPoint.lon, 1200)[0]?.id === 'osm:node:1', 'OSM-Import liest gespeicherte Regionen nach Neustart vor dem Netzabruf');
   const { geoObjects } = await import('../src/geo-world');
   const firstArea = geoObjects(queryPoint.lat, queryPoint.lon, GEO.viewM, 1800000000000);
   const overlap = geoObjects(queryPoint.lat + .002, queryPoint.lon, GEO.viewM, 1800000000000);

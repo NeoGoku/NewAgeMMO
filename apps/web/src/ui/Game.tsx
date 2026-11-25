@@ -4,7 +4,8 @@ import { state, set, useS, toast } from '../store'; import { view, act, call, lo
 import { GameCanvas } from './GameCanvas'; import { Bar, skillIcon, useTick, fmt, Icon } from './kit';
 import { Inventory, Character, MapPanel, QuestPanel } from './Panels1'; import { CraftPanel, PetsPanel, HousePanel, HousesList } from './Panels2'; import { GuildPanel, SocialPanel, MarketPanel, TradePanel, ProfilePanel, ArenaPanel } from './Panels3'; import { Dialog } from './Dialog';
 import { GeoScreen } from '../geo'; import { geoDo, geoBus } from '../geo/bus'; import { OptionsBody } from './Screens';
-import { net } from '../net';
+import { isSoloServer, net } from '../net';
+import { AdminPanel } from './AdminPanel';
 
 /** Ereignisleiste: fünf Hauptbereiche. */
 const NAV: [string, string][] = [['map', 'Karte'], ['char', 'Helden'], ['inv', 'Inventar'], ['quest', 'Quests'], ['more', 'Mehr']];
@@ -19,6 +20,7 @@ const ICON: Record<string, React.ReactNode> = {
 export function Game() {
   const char = useS(s => s.char)!; const snap = useS(s => s.snap); const panel = useS(s => s.panel); const dialog = useS(s => s.dialog); const travel = useS(s => s.travel); const died = useS(s => s.died); const conn = useS(s => s.conn); const house = useS(s => s.house); const inScene = useS(s => s.inScene);
   const geoMode = useS(s => s.geoMode); const walking = useS(s => s.geoWalking); const navPanel = useS(s => s.navPanel); const chatOpen = useS(s => s.hudChat); const scale = useS(s => s.settings.uiScale);
+  const canAdmin = useS(s => s.admin && !isSoloServer(s.settings.server));
   useTick(250); const me = snap?.me; const cb = CLASS_BASE[char.cls]; const need = char.level >= BAL.maxLevel ? BAL.prestigeExp : expToNext(char.level); const expv = char.level >= BAL.maxLevel ? char.pexp : char.exp;
   const [more, setMore] = useState(false);
   const [geoRegion, setGeoRegion] = useState<string>();
@@ -55,12 +57,13 @@ export function Game() {
     {tgtMob && inScene && <div className="tgt" style={{ top: 'calc(56px + var(--sat))', left: '50%', transform: 'translateX(-50%)', width: 'min(320px,80vw)', position: 'absolute', zIndex: 8 }}><div className="row"><b className="grow sm">{MOBS[tgtMob.def].name}</b><span className="pill">Lv {MOBS[tgtMob.def].lvl}</span></div><Bar v={tgtMob.hp} max={tgtMob.maxHp} color="linear-gradient(#e8505f,#a02030)" h={12} /></div>}
     {/* Ereignisleiste */}
     <nav className="navbar">{NAV.map(([k, l]) => <button key={k} className={(k === 'more' ? more : navPanel === k || (k === 'map' && !navPanel && !more)) ? 'on' : ''} onClick={() => nav(k)}>{ICON[k]}<span>{l}</span></button>)}</nav>
-    {more && <div className="morepanel">{MORE.map(([k, l]) => <button key={k} onClick={() => more2(k)}>{l}</button>)}<button onClick={() => { setMore(false); void logoutChar(); }}>Charakter wechseln</button></div>}
+    {more && <div className="morepanel">{MORE.map(([k, l]) => <button key={k} onClick={() => more2(k)}>{l}</button>)}{canAdmin && <button onClick={() => more2('admin')}>Serververwaltung</button>}<button onClick={() => { setMore(false); void logoutChar(); }}>Charakter wechseln</button></div>}
     <Toasts /><Invites />
     {/* Panels & Dialoge */}
     {panel === 'inv' && <Inventory />}{panel === 'char' && <Character />}{panel === 'map' && <MapPanel />}{panel === 'quest' && <QuestPanel />}{panel === 'craft' && <CraftPanel />}{panel === 'pets' && <PetsPanel />}{panel === 'houses' && <HousesList />}
     {panel === 'house' && (house ? null : <HousesList />)}{house && <HousePanel />}
     {panel === 'guild' && <GuildPanel />}{panel === 'social' && <SocialPanel />}{panel === 'market' && <MarketPanel />}{panel === 'trade' && <TradePanel />}{panel === 'profile' && <ProfilePanel />}{panel === 'arena' && <ArenaPanel />}
+    {panel === 'admin' && canAdmin && <AdminPanel />}
     {panel === 'opt' && <div className="win c1" style={{ maxHeight: '86vh' }}><header><span>⚙ Menü</span><button className="btn sm x" onClick={() => set({ panel: null })}>✕</button></header><div className="body"><OptionsBody ingame /><div className="hr" /><div className="row wrap"><button className="btn" onClick={() => { geoDo('wipe'); }}>Meine Standortdaten löschen</button><button className="btn" onClick={async () => { set({ panel: null }); await logoutChar(); }}>Charakter wechseln</button><button className="btn" onClick={async () => { if (await logoutChar()) set({ screen: 'title' }); }}>Zum Titelbildschirm</button></div></div></div>}
     {dialog && <Dialog />}
     {travel && <Travel />}{died && <Died />}

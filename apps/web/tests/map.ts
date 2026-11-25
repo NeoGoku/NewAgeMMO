@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { GEO_ANCHORS, QUESTS } from '@nam/game-data';
 import { distanceLabel, questCategory, questPins } from '../src/geo/quest-map';
-import { mapPreferences, mapStyle, saveMapPreferences } from '../src/geo/map-style';
+import { applyMapPreferences, MAP_DESIGNS, mapPreferences, mapStyle, saveMapPreferences } from '../src/geo/map-style';
 
 const storage = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', { value: {
@@ -32,4 +32,33 @@ assert.ok(pins[1].radius);
 assert.equal(questPins(quest, [0], [])[1].lat, GEO_ANCHORS.stadtpark[0]);
 assert.deepEqual(questPins(quest, [5], [rat]).map(p => p.role), ['giver', 'turnin']);
 assert.match(distanceLabel(1150), /^1,[12] km$/);
+const region = { ...regional, radius: 90, label: 'Regionales Erkundungsgebiet', virtualOnly: true };
+const regionalPins = questPins(QUESTS.d_regional, [0], [], regional, region);
+const regionalObjective = regionalPins.find(pin => pin.role === 'objective');
+assert.equal(regionalObjective?.name, region.label);
+assert.equal(regionalObjective?.radius, 90);
+assert.equal(regionalObjective?.virtualOnly, true);
 console.log('✓ Kartentyp, Helligkeit, Kameraeinstellungen, lokalisierte Questrollen und regionale Zielwahl');
+
+const paints = new Set<string>();
+for (const design of MAP_DESIGNS) {
+  saveMapPreferences({ ...saved, kind: design.id });
+  assert.deepEqual(mapPreferences(), { ...saved, kind: design.id });
+  const layers = new Map<string, any>(mapStyle(saved).layers.map(layer => [layer.id, layer]));
+  layers.set('quest-line', { id: 'quest-line', layout: { visibility: 'visible' } });
+  const sourceIds = new Set<string>();
+  const fakeMap = {
+    getLayer: (id: string) => layers.get(id),
+    getSource: (id: string) => sourceIds.has(id),
+    addSource: (id: string) => sourceIds.add(id),
+    addLayer: (layer: any) => layers.set(layer.id, layer),
+    setPaintProperty: (id: string, prop: string, value: unknown) => (layers.get(id).paint ??= {})[prop] = value,
+    setLayoutProperty: (id: string, prop: string, value: unknown) => (layers.get(id).layout ??= {})[prop] = value
+  };
+  applyMapPreferences(fakeMap as any, { ...saved, kind: design.id });
+  assert.equal(layers.get('quest-line').layout.visibility, 'visible');
+  assert.equal(layers.get('satellite').layout.visibility, design.id === 'satellite' ? 'visible' : 'none');
+  if (layers.get('theme-road')?.layout.visibility === 'visible') paints.add(layers.get('theme-road').paint['line-color']);
+}
+assert.equal(MAP_DESIGNS.length, 8);
+assert.equal(paints.size, 5, 'each original theme has its own road palette');

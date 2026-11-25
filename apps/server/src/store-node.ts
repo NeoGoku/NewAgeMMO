@@ -1,4 +1,5 @@
 import fs from 'node:fs'; import path from 'node:path'; import type { Store } from './store';
+import { PostgresOsmCache } from './osm-store-pg';
 import { WriteOrder } from './write-order';
 class FileStore implements Store {
   kind = 'file'; data: Record<string, Record<string, any>> = {}; dirty = false; timer: NodeJS.Timeout | null = null;
@@ -16,10 +17,15 @@ class FileStore implements Store {
 }
 class PgStore implements Store {
   kind = 'postgres'; pool: any; private writes = new WriteOrder();
+  osmCache?: PostgresOsmCache;
+  private nextOsmPrune = 0;
   constructor(private url: string) {}
   async init() { const pg = await import('pg'); this.pool = new (pg.default || pg).Pool({ connectionString: this.url, max: 8 }); const sql = fs.readdirSync(new URL('../../../database/migrations', import.meta.url)).filter(f => f.endsWith('.sql')).sort();
     await this.pool.query('create table if not exists schema_migrations (name text primary key, applied_at timestamptz default now())');
-    for (const f of sql) { const done = await this.pool.query('select 1 from schema_migrations where name=$1', [f]); if (done.rowCount) continue; await this.pool.query(fs.readFileSync(new URL('../../../database/migrations/' + f, import.meta.url), 'utf8')); await this.pool.query('insert into schema_migrations(name) values($1)', [f]); console.log('[db] Migration angewendet:', f); } }
+    for (const f of sql) { const done = await this.pool.query('select 1 from schema_migrations where name=$1', [f]); if (done.rowCount) continue; await this.pool.query(fs.readFileSync(new URL('../../../database/migrations/' + f, import.meta.url), 'utf8')); await this.pool.query('insert into schema_migrations(name) values($1)', [f]); console.log('[db] Migration angewendet:', f); }
+    this.osmCache = new PostgresOsmCache(this.pool, () => this.hasGis());
+    this.pruneOsm();
+  }
   async get(c: string, id: string) { const r = await this.pool.query('select data from docs where coll=$1 and id=$2', [c, id]); return r.rows[0]?.data ?? null; }
   async put(c: string, id: string, doc: any) { const data = JSON.stringify(doc); await this.writes.run(JSON.stringify([c, id]), () => this.pool.query('insert into docs(coll,id,data,updated_at) values($1,$2,$3,now()) on conflict (coll,id) do update set data=$3, updated_at=now()', [c, id, data])); }
   async del(c: string, id: string) { await this.writes.run(JSON.stringify([c, id]), () => this.pool.query('delete from docs where coll=$1 and id=$2', [c, id])); }
@@ -29,7 +35,12 @@ class PgStore implements Store {
   private gis: boolean | null = null; async hasGis() { if (this.gis === null) { const r = await this.pool.query("select 1 from pg_extension where extname='postgis'"); this.gis = !!r.rowCount; } return this.gis; }
   /** Objekte im Umkreis (Meter) – mit PostGIS per ST_DWithin (GiST-Index). */
   async geoNear(kind: string, lat: number, lon: number, m: number) { if (await this.hasGis()) { const r = await this.pool.query('select id, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon, data from geo_objects where kind=$1 and ST_DWithin(geom, ST_SetSRID(ST_MakePoint($3,$2),4326)::geography, $4)', [kind, lat, lon, m]); return r.rows; } const r = await this.pool.query('select id, lat, lon, data from geo_objects where kind=$1 and abs(lat-$2)<$4/111000.0 and abs(lon-$3)<$4/70000.0', [kind, lat, lon, m]); return r.rows; }
-  async flush() { await this.writes.drain(); }
+  private pruneOsm() {
+    if (!this.osmCache || Date.now() < this.nextOsmPrune) return;
+    this.nextOsmPrune = Date.now() + 3600e3;
+    void this.osmCache.prune().catch(error => console.warn('osm_cache_prune', String(error)));
+  }
+  async flush() { await this.writes.drain(); this.pruneOsm(); }
   async backup() { return 'Bitte pg_dump verwenden (scripts/backup.sh)'; }
 }
 export const makeStore = (): Store => process.env.DATABASE_URL ? new PgStore(process.env.DATABASE_URL) : new FileStore(process.env.DATA_DIR || path.resolve(process.cwd(), '../../data'));

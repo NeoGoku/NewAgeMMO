@@ -9,7 +9,7 @@ const fails = new Map<string, { n: number; until: number }>();
 export async function register(user: string, pw: string): Promise<{ acc?: Account; token?: string; err?: string }> {
   if (!ACC_RE.test(user)) return { err: 'Benutzername: 3–20 Zeichen (A–Z, 0–9, _ -)' }; if (typeof pw !== 'string' || pw.length < 6 || pw.length > 64) return { err: 'Passwort: 6–64 Zeichen' };
   const key = user.toLowerCase(); if (await G.store.get('accounts', key)) return { err: 'Benutzername bereits vergeben' };
-  const salt = crypto.randomBytes(16).toString('hex'); const acc: Account = { id: uid('a'), name: user, hash: scrypt(pw, salt), salt, created: now(), tokens: [], admin: ((((globalThis as any).process?.env?.ADMIN_USERS) || '').split(',').map((s: string) => s.trim().toLowerCase()).includes(key)) };
+  const salt = crypto.randomBytes(16).toString('hex'); const acc: Account = { id: uid('a'), name: user, hash: scrypt(pw, salt), salt, created: now(), tokens: [] };
   const token = mkToken(acc); await G.store.put('accounts', key, acc); return { acc, token };
 }
 export async function login(user: string, pw: string, ip: string): Promise<{ acc?: Account; token?: string; err?: string }> {

@@ -1,5 +1,14 @@
+import type { GeoObj } from '@nam/shared';
+
+export type OsmBounds = readonly [south: number, west: number, north: number, east: number];
+export interface OsmRegion { until: number; points: GeoObj[] }
+export interface OsmCache {
+  getRegion(id: string, bounds: OsmBounds): Promise<OsmRegion | null>;
+  putRegion(id: string, region: OsmRegion): Promise<void>;
+}
+
 /** Dokumentenspeicher. Standard: JSON-Dateien (Entwicklung). Mit DATABASE_URL: PostgreSQL (JSONB-Tabelle `docs`, siehe database/migrations). */
-export interface Store { init(): Promise<void>; get<T = any>(coll: string, id: string): Promise<T | null>; put(coll: string, id: string, doc: any): Promise<void>; del(coll: string, id: string): Promise<void>; all<T = any>(coll: string): Promise<T[]>; flush(): Promise<void>; geoUpsert?(id: string, kind: string, lat: number, lon: number, data?: any): void; geoDel?(id: string): void; geoNear?(kind: string, lat: number, lon: number, m: number): Promise<any[]>; kind: string; backup(): Promise<string> }
+export interface Store { init(): Promise<void>; get<T = any>(coll: string, id: string): Promise<T | null>; put(coll: string, id: string, doc: any): Promise<void>; del(coll: string, id: string): Promise<void>; all<T = any>(coll: string): Promise<T[]>; flush(): Promise<void>; geoUpsert?(id: string, kind: string, lat: number, lon: number, data?: any): void; geoDel?(id: string): void; geoNear?(kind: string, lat: number, lon: number, m: number): Promise<any[]>; osmCache?: OsmCache; kind: string; backup(): Promise<string> }
 export class MemoryStore implements Store {
   kind = 'memory'; data: Record<string, Record<string, any>> = {}; dirty = false;
   async init() {}

@@ -10,3 +10,5 @@ Abhängigkeiten (MIT/Apache): react, react-dom, vite, vite-plugin-pwa, ws, pg, t
 - 3D-Gebäude: [OpenFreeMap](https://openfreemap.org/) verwendet OSM-Gebäudegrundrisse und verfügbare Höhen. OSM und OpenFreeMap werden auf der Karte attribuiert.
 - Satellitenübersicht: [NASA EOSDIS GIBS](https://www.earthdata.nasa.gov/data/projects/gibs), Blue Marble mit globaler Abdeckung und begrenzter Detailauflösung.
 - Optionale regionale Orientierungspunkte: OpenStreetMap (ODbL). Ein konfigurierter Online-Server fragt einen Overpass-Dienst mit begrenzten regionalen Anfragen ab. Prozedurale Regionen bleiben bei Ausfällen spielbar.
+
+Die Designs Underground, Urban, Vintage, Adventure und Cyber kombinieren eigene Farben und Linienregeln mit OSM-Vektordaten von OpenFreeMap. Spielporträts und Marker stammen aus demselben prozeduralen Spiel-Client in allen Ansichten.

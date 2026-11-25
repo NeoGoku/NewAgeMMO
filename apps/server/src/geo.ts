@@ -4,7 +4,7 @@ import { GEO_ANCHORS, GEO_START, LOCS, MOBS, NODES, ITEMS } from '@nam/game-data
 import { clamp, deferMessages, G, now, send, sys, type GeoState, type House, type Player } from './state';
 import { H } from './handlers';
 import { setLocSilent, enterScene, exitScene, teleportTo } from './world';
-import { questEvent } from './quests';
+import { questEvent, recordRegionalVisit } from './quests';
 import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 import { anchorList, geoObjects } from './geo-world';
@@ -226,6 +226,7 @@ function afterMove(p: Player) {
   }
   g.regionLabel = zone ? LOCS[zone].name : 'Regionale Wildnis';
   if (zone && zone !== p.loc && !p.inScene && !p.travel) setLocSilent(p, zone);
+  recordRegionalVisit(p);
 }
 
 function advanceVirtual(p: Player, g: GeoState, t: number) {

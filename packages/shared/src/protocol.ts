@@ -1,6 +1,24 @@
 /** Nachrichtenprotokoll (JSON über WebSocket). Client->Server: { t, rid, ...payload }. Server->Client: { t, rid?, ok?, err?, ...payload }. */
 export type Msg = { t: string; rid?: number; [k: string]: any };
 export const PROTOCOL_VERSION = 1;
+export interface AdminAuditEntry {
+  id: string;
+  at: number;
+  actor: string;
+  action: 'announce' | 'kick' | 'gold' | 'give' | 'respawn';
+  target?: string;
+  detail?: string;
+}
+export interface AdminDashboard {
+  online: number;
+  tickMs: number;
+  msgs: number;
+  saves: number;
+  uptime: number;
+  store: string;
+  players: { id: string; name: string; level: number }[];
+  audit: AdminAuditEntry[];
+}
 export const NAME_RE = /^[A-Za-zÄÖÜäöüß0-9_\- ]{3,16}$/;
 export const ACC_RE = /^[A-Za-z0-9_\-]{3,20}$/;
 export interface PlayerView { id: string; name: string; cls: string; look: any; lvl: number; hp: number; maxHp: number; x: number; y: number; dx: number; dy: number; guild?: string; eq: Record<string, string>; pet?: string; emote?: string; emoteT?: number; pvp?: boolean; party?: boolean; fx?: string[]; sum?: number; mount?: boolean }

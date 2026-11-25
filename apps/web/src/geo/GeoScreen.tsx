@@ -6,7 +6,7 @@ import { set, useS } from '../store';
 import { MOBS, QUESTS } from '@nam/game-data';
 import { mobIconUrl, portraitUrl } from '../render';
 import { Joystick } from './Joystick';
-import { applyMapPreferences, mapPreferences, mapStyle, saveMapPreferences, type MapKind } from './map-style';
+import { applyMapPreferences, MAP_DESIGNS, mapPreferences, mapStyle, saveMapPreferences, type MapKind } from './map-style';
 import { distanceLabel, pinLabels, questPins, type QuestPinRole } from './quest-map';
 import { geoBus } from './bus';
 import { net } from '../net';
@@ -168,7 +168,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       redraw.current();
     });
     map.on('error', () => setMapError('Kartendaten teilweise nicht verfügbar.'));
-    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'buildings'].includes(event.sourceId ?? '')) setMapError(''); });
+    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
     map.on('moveend', () => {
       if (!centered.current) return;
       const current = preferencesRef.current;
@@ -190,15 +190,17 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
   useEffect(() => {
     saveMapPreferences(preferences);
-    if (mapRef.current?.isStyleLoaded()) applyMapPreferences(mapRef.current, preferences);
   }, [preferences]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map?.getLayer('osm')) applyMapPreferences(map, preferencesRef.current);
+  }, [preferences.kind, preferences.brightness]);
 
   function setMapKind(kind: MapKind) {
     setMapError('');
     const next = { ...preferencesRef.current, kind };
     preferencesRef.current = next;
     setPreferences(next);
-    if (mapRef.current?.getLayer('osm')) applyMapPreferences(mapRef.current, next);
     if (kind === 'buildings' && next.pitch < 25) mapRef.current?.easeTo({ pitch: 48, zoom: Math.max(mapRef.current.getZoom(), 15) });
   }
   async function walkTo(lat: number, lon: number) {
@@ -228,7 +230,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
   const trackedQuest = questTrack ? QUESTS[questTrack.id] : undefined;
   const questProgress = trackedQuest ? questStates?.[trackedQuest.id]?.prog ?? [] : [];
-  const pins = trackedQuest ? questPins(trackedQuest, questProgress, objsRef.current, myPos() ?? undefined) : [];
+  const pins = trackedQuest ? questPins(trackedQuest, questProgress, objsRef.current, myPos() ?? undefined, questStates?.[trackedQuest.id]?.region) : [];
   const questTarget = pins.find(p => p.role === questTrack?.role) ?? pins[0];
 
   function focusQuestPin(role: QuestPinRole, navigate: boolean) {
@@ -480,7 +482,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       {mapSettings && <section className="settings" aria-label="Karteneinstellungen">
         <label>Kartentyp
           <select value={preferences.kind} onChange={e => setMapKind(e.target.value as MapKind)}>
-            <option value="standard">Standard</option><option value="satellite">Satellit · Übersicht</option><option value="buildings">3D-Gebäude</option>
+            {MAP_DESIGNS.map(design => <option key={design.id} value={design.id}>{design.label}</option>)}
           </select>
         </label>
         <label>Helligkeit · {preferences.brightness} %
@@ -501,7 +503,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         {questTarget && <div>{pinLabels[questTarget.role]} · {questTarget.name}{questDistance !== null && ' · ' + distanceLabel(questDistance)}</div>}
         {questStates?.[trackedQuest.id] && <div>{trackedQuest.goals.map((goal, i) => <span key={i}>{i > 0 && ' · '}{questProgress[i] ?? 0}/{goal.n}{goal.label ? ' ' + goal.label : ''}</span>)}</div>}
         {questTrack?.navigate && questDistance !== null && mode === 'virtual' && questDistance > 200000 && <div>Für diese Entfernung ein Teleportportal nutzen.</div>}
-        {questTrack?.navigate && mode === 'gps' && <div>Die Linie zeigt die Richtung zum Ziel.</div>}
+        {questTarget?.virtualOnly && mode === 'gps' ? <div>Dieses Ziel ist im virtuellen Modus erreichbar.</div> : questTrack?.navigate && mode === 'gps' && <div>Die Linie zeigt die Richtung zum Ziel.</div>}
         <div className="row">{pins.map(pin => <button key={pin.key} onClick={() => focusQuestPin(pin.role, false)}>{pinLabels[pin.role]}</button>)}</div>
       </section>}
       {o && (

@@ -1,7 +1,7 @@
 import { CLASS_IDS } from '@nam/shared';
 import { PROFS } from './professions';
 import { CLASSES } from './classes';
-export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'; t: string; n: number; label?: string }
+export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'|'region'; t: string; n: number; label?: string }
 export interface Reward { exp?: number; gold?: number; items?: { id: string; qty: number; rar?: number }[]; rep?: Record<string, number>; train?: number; stat?: number }
 export interface QuestDef { id: string; name: string; type: 'main'|'side'|'daily'|'class'|'prof'|'hidden'|'event'; giver: string; turnin: string; lvl: number; prereq?: string; desc: string; offer: string; done: string; goals: Goal[]; reward: Reward; choice?: { text: string; options: { id: string; label: string; rep: Record<string, number> }[] }; autoStart?: string; repeat?: 'daily'; scale?: boolean; give?: { id: string; qty: number } }
 export const FACTIONS: Record<string, string> = { rat: 'Magierrat', syndikat: 'Schattensyndikat', union: 'Technikerunion' };
@@ -46,6 +46,13 @@ for (const p of PROFS) {
 }
 for (const c of CLASS_IDS) Q({ id: `c_${c}`, name: `Prüfung: ${CLASSES[c].name}`, type: 'class', giver: 'orwin', turnin: 'orwin', lvl: 10, prereq: 'm2', desc: `Beweise deine Meisterschaft als ${CLASSES[c].name}: besiege 12 Waldwölfe.`, goals: [g('kill', 'wolf', 12)], reward: { exp: 2500, gold: 500, items: [{ id: `w_${c}_1`, qty: 1, rar: 2 }], stat: 1 } });
 // Tägliche Quests (skalieren mit Level)
+export const REGIONAL_QUEST_ID = 'd_regional';
+Q({
+  id: REGIONAL_QUEST_ID, name: 'Täglich: Die Gegend erkunden', type: 'daily', giver: 'mira', turnin: 'mira',
+  lvl: 1, repeat: 'daily',
+  desc: 'Erreiche das markierte Gebiet in deiner Umgebung. Prozedurale Gebiete sind nur im virtuellen Modus aktiv.',
+  goals: [g('region', '*', 1, 'Erkundungsgebiet erreichen')], reward: { exp: 25, gold: 30, train: 30 }
+});
 Q({ id: 'd_kill', name: 'Täglich: Monsterjagd', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Besiege 20 beliebige Gegner.', goals: [g('kill', '*', 20)], reward: {} });
 Q({ id: 'd_gather', name: 'Täglich: Sammler', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Sammle 10 Ressourcen.', goals: [g('gather', '*', 10)], reward: { train: 80 } });
 Q({ id: 'd_craft', name: 'Täglich: Handwerker', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Stelle 3 Gegenstände her.', goals: [g('craft', '*', 3)], reward: { train: 100 } });

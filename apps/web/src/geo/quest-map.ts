@@ -1,5 +1,5 @@
 import { GEO_ANCHORS, RECIPES, LOCS, NODES, NPCS, placeNear, type Goal, type QuestDef } from '@nam/game-data';
-import { haversine, type GeoObj } from '@nam/shared';
+import { haversine, type GeoObj, type QuestRegion } from '@nam/shared';
 
 export const questCategory: Record<QuestDef['type'], string> = {
   main: 'Hauptgeschichte', side: 'Nebenquest', daily: 'Tagesquest',
@@ -7,7 +7,7 @@ export const questCategory: Record<QuestDef['type'], string> = {
 };
 export const pinLabels = { giver: 'Questgeber', objective: 'Zielgebiet', turnin: 'Abgabe' } as const;
 export type QuestPinRole = keyof typeof pinLabels;
-export interface QuestPin { key: string; role: QuestPinRole; name: string; lat: number; lon: number; radius?: number }
+export interface QuestPin { key: string; role: QuestPinRole; name: string; lat: number; lon: number; radius?: number; virtualOnly?: boolean }
 
 function npcPin(id: string, role: QuestPinRole, objects: GeoObj[]): QuestPin | undefined {
   const npc = NPCS[id];
@@ -22,7 +22,8 @@ function mapAnchor(id: string, name?: string): QuestPin | undefined {
   const [lat, lon, radius] = anchor;
   return { key: 'objective', role: 'objective', name: name ?? LOCS[id].name, lat, lon, radius };
 }
-function objectivePin(goal: Goal, objects: GeoObj[], from?: { lat: number; lon: number }): QuestPin | undefined {
+function objectivePin(goal: Goal, objects: GeoObj[], from?: { lat: number; lon: number }, region?: QuestRegion): QuestPin | undefined {
+  if (goal.k === 'region') return region && { key: 'objective', role: 'objective', ...region, name: region.label };
   if (goal.k === 'talk') return npcPin(goal.t, 'objective', objects);
   if (goal.k === 'visit' || goal.k === 'dungeon') return mapAnchor(goal.t);
   const match = (o: GeoObj) => {
@@ -42,11 +43,11 @@ function objectivePin(goal: Goal, objects: GeoObj[], from?: { lat: number; lon: 
   return loc ? mapAnchor(loc.id) : undefined;
 }
 
-export function questPins(q: QuestDef, progress: readonly number[], objects: GeoObj[], from?: { lat: number; lon: number }): QuestPin[] {
+export function questPins(q: QuestDef, progress: readonly number[], objects: GeoObj[], from?: { lat: number; lon: number }, region?: QuestRegion): QuestPin[] {
   const goal = q.goals.find((g, index) => (progress[index] ?? 0) < g.n);
   const giver = npcPin(q.giver, 'giver', objects);
   const turnin = npcPin(q.turnin, 'turnin', objects);
-  let objective = goal && objectivePin(goal, objects, from);
+  let objective = goal && objectivePin(goal, objects, from, region);
   if (!objective && goal && (goal.k === 'craft' || goal.k === 'collect')) {
     const hint = NPCS[q.giver];
     if (hint) objective = mapAnchor(hint.loc);
