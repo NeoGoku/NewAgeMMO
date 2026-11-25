@@ -4,6 +4,7 @@ import type { GeoTravelMode } from './balance';
 export const GEO = {
   cellDeg: 0.0025, // ≈ 280 m Rasterzelle für dynamische Spawns
   interactM: 120, // Interaktionsradius in Metern
+  maxNormalMobsVisible: 96,
   viewM: 1200, // Sichtradius für Objekte
   playerQuantDeg: 0.001, // andere Spieler nur auf ≈100 m gerundet sichtbar (Datenschutz)
   maxSpeed: { gps: 45, virtual: 30 } as Record<string, number>, // m/s Obergrenzen (Manipulationsschutz)

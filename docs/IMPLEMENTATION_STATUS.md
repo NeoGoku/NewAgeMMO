@@ -5,6 +5,8 @@
 
 - GPS verwendet bestätigte Gerätekoordinaten. Ohne GPS-Fix werden keine Berliner Spielobjekte angezeigt. Regionale Zellen erzeugen auch fern der gesetzten Spielorte NPCs, Ressourcen, Monster und Elitegegner.
 - Standard-, Satelliten- und 3D-Kartenansicht mit gespeicherter Kamera und Helligkeit. Monster verwenden animierte prozedurale Porträts, Kartenkämpfe zählen für Quests und kehren nach gespeicherter Belohnung zur Karte zurück.
+- WASD und der Touch-Joystick teilen Richtungslogik, Fortbewegungswahl und serverseitige Begrenzung. Der GPS-Schalter liegt in der Kartenleiste. Die Kartenhöhe folgt der sichtbaren Browserhöhe.
+- Vier Standardgegner pro regionaler Rasterzelle verkürzen Wege. Die 96 nächsten normalen Gegner werden übertragen. Elitegegner und Bosse nutzen ihre eigenen Spawnregeln.
 - Virtueller Joystick und Routen teilen sich die serverseitigen Richtwerte 5 km/h beim Gehen, 10 km/h beim Rennen und 20 km/h auf dem Fahrrad. Ausgerüstete Reittiere variieren zwischen 25 und 40 km/h. Joystick-Eingaben laufen bei Unterbrechung ab. Questdetails markieren Geber, Zielgebiet und Abgabe.
 - Solo-Backups behalten das vorhandene IndexedDB-Format und werden ausschließlich aus dem Titelmenü eingespielt. Der Service Worker bietet Updates am Titelbildschirm an. Audio trennt Musik, Umgebung und Effekte.
 - Offen bleiben Live-Nachweis aller Kartenquellen, Installation auf einem physischen Android-Gerät sowie Live-Nachweis des externen Overpass-Endpunkts. Für künftige APK-Updates über dieselbe Installation muss dieselbe Signatur verwendet werden.
@@ -12,7 +14,7 @@
 ## Kartenmenü, persistente Reisen und Immobilien
 
 - Kartenansicht direkt oberhalb der Zoomtasten und in den Spieleinstellungen. Typ und Style können unabhängig gewechselt werden. Die alten Einstellungen werden gelesen und in das getrennte Schema übernommen.
-- Valhalla liefert Straßengeometrie für Start, Pause, Fortsetzen, Abbruch und Zielwechsel. Online gilt Serverzeit. Neuberechnung erneuert die Vorschau. Bei einem Routingfehler bleibt für Gehen und Rennen eine ausdrücklich ausgewählte, gestrichelt angezeigte Luftlinienreise bis 2 km möglich. Öffentlicher HTTPS-Routendienst und Geocoding stehen aus.
+- Valhalla liefert Straßengeometrie für Start, Pause, Fortsetzen, Abbruch und Zielwechsel. Online gilt Serverzeit. Neuberechnung erneuert die Vorschau. Die Reiseansicht zeigt Gesamtlänge, Reststrecke und verbleibende Dauer. Bei einem Routingfehler bleibt für Gehen und Rennen eine ausdrücklich ausgewählte, gestrichelt angezeigte Luftlinienreise bis 2 km möglich. Öffentlicher HTTPS-Routendienst und Geocoding stehen aus.
 - Kartencluster gruppieren nahe Marker auf der aktuellen Projektion. Kategorien, Questmarker und Spieler lassen sich filtern. Die Typ- und Style-Auswahl erhält die Spielkoordinaten und stellt sieben eigenständige Vektorstile bereit.
 - Der geografische Immobilienmarkt nutzt reale OSM-Umrisse. Die gebündelte Braunschweig-Referenz deckt Innenstadt, Weststadt und Heidberg ab. Online lädt der Server Wohn- und Gewerbegebäude bedarfsgerecht. Fläche und Preis verwenden den Grundriss, Geschossfläche und Zimmerzahl sind Schätzungen. Gekaufte Gebäude behalten ihre gespeicherten Attribute und ihren kostenfreien Schnellreisepunkt. Geografische Vermietung, Baugrundstücke, ALKIS und zusätzliche Eigentumsplätze stehen aus.
 

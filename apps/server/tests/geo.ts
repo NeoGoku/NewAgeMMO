@@ -163,7 +163,9 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(geo.pending, 'Ungenauer GPS-Fix setzt keine Kartenposition');
   r = await req('geoPos', braunschweig);
   ok(r.t === 'ok' && geo.me?.lat === braunschweig.lat && geo.me?.lon === braunschweig.lon && geo.me?.regionLabel === 'Regionale Wildnis', 'Erster GPS-Fix verankert sofort in Braunschweig');
-  ok(geo.objs.some((o: any) => o.k === 'mob' && o.role === 'normal' && o.lvl <= 6 && haversine(o.lat, o.lon, braunschweig.lat, braunschweig.lon) < 350), 'Braunschweig hat Monster für Einsteiger in der Nähe');
+  const localMobs = geo.objs.filter((o: any) => o.k === 'mob' && o.role === 'normal' && o.lvl <= 6 &&
+    haversine(o.lat, o.lon, braunschweig.lat, braunschweig.lon) <= 160);
+  ok(localMobs.length >= 2, 'Braunschweig hat mehrere Einsteiger-Monster innerhalb von 160 m');
   ok(geo.objs.some((o: any) => o.k === 'npc') && geo.objs.some((o: any) => o.k === 'node' && o.def.endsWith('_0')) && geo.objs.some((o: any) => o.k === 'mob' && o.role === 'elite'), 'Regionale NPCs, Rohstoffe und Eliten sind sichtbar');
   r = await req('geoSteer', { north: 1, east: 0 });
   ok(r.t === 'err', 'Joystick kann GPS-Position nicht verändern');

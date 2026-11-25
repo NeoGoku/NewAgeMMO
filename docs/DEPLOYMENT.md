@@ -17,7 +17,7 @@ Siehe README „Reale Erde“; Standortdaten werden nicht dauerhaft präzise ges
 
 ## Karten und Android-Updates
 - `OSM_OVERPASS_URL` setzt auf dem Online-Server den Overpass-Endpunkt. Standard ist `https://overpass-api.de/api/interpreter`. Ein leerer Wert deaktiviert den Import. Anfragen verwenden gerundete Regionsgrenzen. PostgreSQL speichert bis zu 512 Regionen mit 24 Stunden Gültigkeit, PostGIS indiziert zusätzlich die Kartenpositionen. Der Speicher-Cache bleibt für Dateispeicher und als Ausfallpfad erhalten.
-- GitHub Pages benötigt keinen Spielserver für den Solo-Modus. Browser-Kartengrundlagen werden bei Bedarf von OpenStreetMap, OpenFreeMap oder NASA GIBS bezogen. Details stehen in [ASSET_LICENSES.md](ASSET_LICENSES.md).
+- GitHub Pages benötigt keinen Spielserver für den Solo-Modus. Browser-Kartengrundlagen werden bei Bedarf von OpenStreetMap, OpenFreeMap oder EOX Sentinel-2 bezogen. Details stehen in [ASSET_LICENSES.md](ASSET_LICENSES.md).
 - Für Android-Updates über dieselbe Installation den vorhandenen Signierschlüssel wiederverwenden. Die nötigen Actions-Secrets und die feste Zertifikatsvariable sind in [apps/android/README.md](../apps/android/README.md) dokumentiert.
 
 ## Online-Moderation

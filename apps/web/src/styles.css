@@ -2,7 +2,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 html,body,#root{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;touch-action:manipulation}
 button{font:inherit;color:inherit;cursor:pointer}input,select{font:inherit;user-select:text;-webkit-user-select:text}
-.app{position:fixed;inset:0;overflow:hidden}canvas.full{position:absolute;inset:0;width:100%;height:100%;display:block}
+.app{position:fixed;inset:0;width:100%;height:100%;height:100dvh;overflow:hidden}canvas.full{position:absolute;inset:0;width:100%;height:100%;display:block}
 .btn{background:linear-gradient(#27406e,#162548);border:1px solid var(--line);border-radius:10px;padding:9px 14px;min-height:40px;color:var(--txt);box-shadow:0 2px 10px #0006,inset 0 1px #fff2;transition:.12s}
 .btn:hover{border-color:var(--cy);box-shadow:0 0 14px #35e0ff55}.btn:active{transform:scale(.97)}.btn.pri{background:linear-gradient(#2fb4d6,#1b6f94);border-color:#7fe9ff}.btn.dng{background:linear-gradient(#a8283a,#5d1220)}.btn.sm{padding:5px 9px;min-height:30px;font-size:12px}.btn[disabled]{opacity:.45;pointer-events:none}.btn.on{border-color:var(--grn);box-shadow:0 0 12px #5ee06a66}
 .row{display:flex;gap:8px;align-items:center}.col{display:flex;flex-direction:column;gap:8px}.grow{flex:1;min-width:0}.wrap{flex-wrap:wrap}.dim{color:var(--dim)}.gold{color:var(--gold)}.err{color:var(--red)}.ok{color:var(--grn)}.c{text-align:center}.sm{font-size:12px}.xs{font-size:11px}.b{font-weight:700}
@@ -55,8 +55,6 @@ input[type=range]{width:100%;accent-color:var(--cy)}
 .hudc .sub{font-size:11px;color:#7fa3b8;display:flex;gap:8px;justify-content:space-between}
 .hudc .lvl{background:#1ee8ff22;border:1px solid #1ee8ff66;border-radius:8px;padding:0 6px;font-size:11px;color:#8ff4ff;flex:none}
 .hudbtn{position:absolute;right:calc(8px + var(--sar));top:calc(8px + var(--sat));z-index:8;background:#04101ce6;border:1px solid #1ee8ff66;border-radius:12px;color:#cdeeff;min-height:40px;padding:0 12px;font:inherit;pointer-events:auto}
-.pills{position:absolute;left:max(calc(108px + var(--sal)),calc(50% - 92px));right:calc(68px + var(--sar));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:8px;align-items:center;justify-content:space-between;pointer-events:none}
-.pills>*{pointer-events:auto}
 .pill-btn{background:#04101ce6;border:1px solid #1ee8ff66;border-radius:99px;color:#cdeeff;min-height:38px;padding:0 14px;font:inherit;font-size:13px}
 .pill-btn.warn{border-color:#ff6b7a;color:#ffb3bb}
 .chatpill{position:absolute;left:calc(8px + var(--sal));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;width:min(340px,70vw);pointer-events:auto}
@@ -64,7 +62,7 @@ input[type=range]{width:100%;accent-color:var(--cy)}
 .skillbar{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:6px;align-items:flex-end;background:#04101ce6;border:1px solid #1ee8ff55;border-radius:16px;padding:6px;pointer-events:auto;max-width:calc(100vw - 16px)}
 .skillbar .slot{width:46px;height:46px;border-radius:12px}
 .skillbar .slot img{width:38px;height:38px}
-.navbar{position:absolute;left:0;right:0;bottom:0;height:calc(var(--navh) + var(--sab));padding-bottom:var(--sab);z-index:10;display:grid;grid-template-columns:repeat(5,1fr);background:linear-gradient(#04101cf5,#020710fa);border-top:1px solid #1ee8ff55;box-shadow:0 -6px 24px #000b;pointer-events:auto}
+.navbar{position:absolute;left:0;right:0;bottom:0;padding-inline:var(--sal) var(--sar);height:calc(var(--navh) + var(--sab));padding-bottom:var(--sab);z-index:10;display:grid;grid-template-columns:repeat(5,1fr);background:linear-gradient(#04101cf5,#020710fa);border-top:1px solid #1ee8ff55;box-shadow:0 -6px 24px #000b;pointer-events:auto}
 .navbar button{background:none;border:0;color:#7fa3b8;font:inherit;font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:var(--navh)}
 .navbar button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8}
 .navbar button.on{color:#5ef2ff;text-shadow:0 0 8px #5ef2ff}

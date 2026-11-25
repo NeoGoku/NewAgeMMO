@@ -1,6 +1,7 @@
 # Development Queue
 
 ## Veröffentlichung und nächste Integrationen
+- [implementiert] WASD und Touch-Joystick für den virtuellen Modus, dichter verteilte Standardgegner, kompakte Kartensteuerung mit GPS-Schalter und Sentinel-2 mit Straßenkarten-Ersatz.
 - [lokal geprüft] P0: Kampfbelohnung, Levelaufstieg, Logout und Reconnect mit JSON und PostgreSQL 16 + PostGIS. Browser-Solo: Service Worker und IndexedDB-Reconnect in Chromium.
 - [erledigt] PR #1 ist in `main` gemergt. GitHub Pages ist eingerichtet.
 - [implementiert/geprüft] P1: eigenständige Teleportportale mit Distanz-, Modus- und Freischaltungsprüfung sowie virtuelles Routing mit serverseitiger Reisezeit.

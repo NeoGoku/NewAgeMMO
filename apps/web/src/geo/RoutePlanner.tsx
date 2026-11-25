@@ -37,6 +37,7 @@ export function RoutePlanner({ target, start, available, onGeometry, onStarted, 
   const [attempt, retry] = useState(0);
   const airDistance = haversine(start.lat, start.lon, target.lat, target.lon);
   const supportsDirect = mode === 'walk' || mode === 'run';
+  const canUseDirect = supportsDirect && airDistance >= 1 && airDistance <= GEO.directTravelMaxM;
   const useDirect = direct && supportsDirect;
   useEffect(() => {
     let current = true;
@@ -84,8 +85,8 @@ export function RoutePlanner({ target, start, available, onGeometry, onStarted, 
       <button type="button" className="on" disabled={!preview || loading || starting} onClick={() => void startTravel()}>Reise starten</button>
       <button type="button" disabled={starting || loading} onClick={() => retry(n => n + 1)}>Neu berechnen</button>
       {useDirect && <button type="button" disabled={starting} onClick={() => setDirect(false)}>Straßenroute versuchen</button>}
-      {!useDirect && supportsDirect && error && airDistance <= GEO.directTravelMaxM &&
-        <button type="button" disabled={starting || loading} onClick={() => setDirect(true)}>Direkt virtuell bewegen</button>}
+      {!useDirect && canUseDirect &&
+        <button type="button" disabled={starting} onClick={() => setDirect(true)}>Virtuelle Luftlinie</button>}
     </div>
   </section>;
 }
@@ -101,7 +102,7 @@ export function TravelStatus({ travel, onReroute }: { travel: GeoTravelView; onR
   };
   return <section className="route-panel" aria-label="Aktuelle Reise">
     <strong>{travel.status === 'arrived' ? 'Ziel erreicht' : travel.status === 'paused' ? 'Reise pausiert' : 'Reise läuft'} · {transport[travel.mode]}{travel.direct ? ' · Luftlinie' : ''}</strong>
-    {travel.status !== 'arrived' && <div>{distanceLabel(travel.remainingM)} verbleibend · {duration(travel.etaSeconds)}</div>}
+    {travel.status !== 'arrived' && <div>{distanceLabel(travel.remainingM)} von {distanceLabel(travel.totalM)} verbleibend · {duration(travel.etaSeconds)}</div>}
     <div className="row wrap">
       {travel.status === 'moving' && <button type="button" disabled={pending} onClick={() => void action('geoRoutePause')}>Pausieren</button>}
       {travel.status === 'paused' && <button type="button" disabled={pending} onClick={() => void action('geoRouteResume')}>Fortsetzen</button>}

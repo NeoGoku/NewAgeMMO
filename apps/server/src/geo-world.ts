@@ -107,9 +107,12 @@ function selectMob(role: MobDef['role'], level: number, seed: number) {
 
 export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now()): GeoObj[] {
   const out: GeoObj[] = [];
+  const normals: GeoObj[] = [];
   const keep = (object: GeoObj, distance = radius) => {
-    if ((G.geoTaken.get(object.id) || 0) <= t && haversine(lat, lon, object.lat, object.lon) <= distance) out.push(object);
+    if ((G.geoTaken.get(object.id) || 0) > t || haversine(lat, lon, object.lat, object.lon) > distance) return;
+    (object.role === 'normal' ? normals : out).push(object);
   };
+  const byDistance = (a: GeoObj, b: GeoObj) => haversine(lat, lon, a.lat, a.lon) - haversine(lat, lon, b.lat, b.lon);
   const bucket = Math.floor(t / GEO.spawnBucketMs);
   const hour = Math.floor(t / 36e5);
   for (const o of STATIC) keep(o);
@@ -121,9 +124,13 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
     const [clat, clon] = cellPoint(cell, .5, .5);
     if (haversine(lat, lon, clat, clon) > radius + 210) continue;
     const level = regionalLevel(clat, clon, seed);
-    const [mlat, mlon] = cellPoint(cell, .25 + roll() * .5, .25 + roll() * .5);
-    const normal = selectMob('normal', Math.max(1, level + Math.floor(roll() * 3) - 1), seed);
-    keep(mobObject(normal, mlat, mlon, `m:${id}:0:${bucket}`));
+    for (let slot = 0; slot < 4; slot++) {
+      const y = .25 + Math.floor(slot / 2) * .5 + (roll() - .5) * .09;
+      const x = .25 + (slot % 2) * .5 + (roll() - .5) * .09;
+      const [mlat, mlon] = cellPoint(cell, y, x);
+      const normal = selectMob('normal', Math.max(1, level + Math.floor(roll() * 3) - 1), seed + slot);
+      keep(mobObject(normal, mlat, mlon, `m:${id}:${slot}:${bucket}`));
+    }
     if (seed % 4 === 0) {
       const def = 'n_' + NODE_KINDS[hash32('node:' + id) % NODE_KINDS.length] + '_' + Math.min(9, Math.floor(level / 10));
       const [nlat, nlon] = cellPoint(cell, .24, .22);
@@ -159,5 +166,6 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
   }
   for (const property of properties.values()) keep(property);
   for (const poi of osmObjects(lat, lon, radius)) keep(poi);
-  return out.sort((a, b) => haversine(lat, lon, a.lat, a.lon) - haversine(lat, lon, b.lat, b.lon));
+  out.push(...normals.sort(byDistance).slice(0, GEO.maxNormalMobsVisible));
+  return out.sort(byDistance);
 }

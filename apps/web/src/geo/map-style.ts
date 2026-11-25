@@ -66,13 +66,14 @@ const themes: Record<MapTheme, Theme> = {
 };
 
 const osmAttribution = '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap-Mitwirkende</a>';
-const nasaAttribution = '<a href="https://www.earthdata.nasa.gov/data/projects/gibs">NASA EOSDIS GIBS</a>';
+const satelliteAttribution = '<a href="https://s2maps.eu/">Sentinel-2 cloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2024)';
 const vector = {
   type: 'vector' as const,
   url: 'https://tiles.openfreemap.org/planet',
   attribution: '<a href="https://openfreemap.org/">OpenFreeMap</a> · ' + osmAttribution
 };
-const imageryPath = 'wmts/epsg3857/best/Landsat_WELD_CorrectedReflectance_TrueColor_Global_Annual/default/1999-01-02/GoogleMapsCompatible_Level12/{z}/{y}/{x}.jpg';
+const imageryTile = 'https://tiles.maps.eox.at/wms?service=WMS&version=1.1.1&request=GetMap' +
+  '&layers=s2cloudless-2024_3857&styles=&format=image/jpeg&srs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}';
 export interface MapPreferences {
   kind: MapKind;
   style: MapTheme | null;
@@ -125,9 +126,9 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
         attribution: '<a href="https://worldview.earthdata.nasa.gov/">NASA Worldview · Blue Marble</a>'
       },
       satellite: {
-        type: 'raster', tileSize: 256, maxzoom: 12,
-        tiles: ['https://gibs.earthdata.nasa.gov/' + imageryPath],
-        attribution: nasaAttribution + ' · Landsat GWELD'
+        type: 'raster', tileSize: 256, maxzoom: 15,
+        tiles: [imageryTile],
+        attribution: satelliteAttribution
       }
     },
     layers: [
@@ -136,6 +137,8 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
         paint: { 'raster-brightness-max': brightness } },
       { id: 'satellite-overview', type: 'raster', source: 'satellite-overview', layout: { visibility: visible(satellite) },
         paint: { 'raster-brightness-max': brightness } },
+      { id: 'satellite-street-fallback', type: 'raster', source: 'osm', minzoom: 8,
+        layout: { visibility: visible(satellite) }, paint: { 'raster-brightness-max': brightness } },
       { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: visible(satellite) },
         paint: { 'raster-brightness-max': brightness } }
     ]
@@ -247,8 +250,8 @@ export function applyMapPreferences(map: LibreMap, preferences: MapPreferences) 
   const brightness = preferences.brightness / 100;
   const before = map.getLayer('cities-fill') ? 'cities-fill' : undefined;
   map.setLayoutProperty('osm', 'visibility', visible(standard(preferences)));
-  for (const id of ['satellite-overview', 'satellite']) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
-  for (const id of ['osm', 'satellite-overview', 'satellite']) map.setPaintProperty(id, 'raster-brightness-max', brightness);
+  for (const id of ['satellite-overview', 'satellite-street-fallback', 'satellite']) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
+  for (const id of ['osm', 'satellite-overview', 'satellite-street-fallback', 'satellite']) map.setPaintProperty(id, 'raster-brightness-max', brightness);
   map.setPaintProperty('bg', 'background-color', theme && preferences.kind !== 'satellite' ? tone(theme.background, brightness) : '#172834');
 
   if ((theme || preferences.kind === 'buildings') && !map.getSource('openmap')) {

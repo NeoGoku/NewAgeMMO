@@ -25,8 +25,10 @@ assert.equal(satellite.layers.find(l => l.id === 'satellite')?.layout?.visibilit
 assert.equal(satellite.layers.find(l => l.id === 'satellite-overview')?.layout?.visibility, 'visible');
 assert.ok(satellite.layers.findIndex(l => l.id === 'satellite-overview') < satellite.layers.findIndex(l => l.id === 'satellite'));
 assert.ok(satellite.sources.satellite.type === 'raster');
-assert.equal(satellite.sources.satellite.maxzoom, 12);
-assert.match(satellite.sources.satellite.tiles![0], /Landsat_WELD_CorrectedReflectance_TrueColor_Global_Annual\/default\/1999-01-02\/GoogleMapsCompatible_Level12\/\{z\}\/\{y\}\/\{x\}\.jpg$/);
+assert.equal(satellite.sources.satellite.maxzoom, 15);
+assert.match(satellite.sources.satellite.tiles![0], /layers=s2cloudless-2024_3857.*bbox=\{bbox-epsg-3857\}/i);
+assert.ok(satellite.layers.findIndex(l => l.id === 'satellite-overview') < satellite.layers.findIndex(l => l.id === 'satellite-street-fallback'));
+assert.ok(satellite.layers.findIndex(l => l.id === 'satellite-street-fallback') < satellite.layers.findIndex(l => l.id === 'satellite'));
 storage.set('nam.map.preferences', '{"brightness":null,"zoom":100}');
 assert.equal(mapPreferences().zoom, 19);
 assert.equal(mapPreferences().brightness, 100);
@@ -90,6 +92,7 @@ for (const { id: kind } of MAP_TYPES) for (const { id: style } of MAP_STYLES) {
   assert.equal(layers.get('quest-line').layout.visibility, 'visible');
   assert.equal(layers.get('satellite').layout.visibility, kind === 'satellite' ? 'visible' : 'none');
   assert.equal(layers.get('osm').layout.visibility, 'none');
+  assert.equal(layers.get('satellite-street-fallback').layout.visibility, kind === 'satellite' ? 'visible' : 'none');
   assert.equal(layers.get('buildings').layout.visibility, kind === 'buildings' ? 'visible' : 'none');
   assert.equal(layers.get('theme-road').layout.visibility, 'visible');
   assert.equal(layers.get('theme-building').layout.visibility, kind === 'standard' ? 'visible' : 'none');

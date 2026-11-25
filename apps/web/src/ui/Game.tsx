@@ -20,7 +20,7 @@ const ICON: Record<string, React.ReactNode> = {
 };
 export function Game() {
   const char = useS(s => s.char)!; const snap = useS(s => s.snap); const panel = useS(s => s.panel); const dialog = useS(s => s.dialog); const travel = useS(s => s.travel); const died = useS(s => s.died); const conn = useS(s => s.conn); const house = useS(s => s.house); const inScene = useS(s => s.inScene);
-  const geoMode = useS(s => s.geoMode); const walking = useS(s => s.geoWalking); const navPanel = useS(s => s.navPanel); const chatOpen = useS(s => s.hudChat); const scale = useS(s => s.settings.uiScale);
+  const geoMode = useS(s => s.geoMode); const navPanel = useS(s => s.navPanel); const chatOpen = useS(s => s.hudChat); const scale = useS(s => s.settings.uiScale);
   const selectedProperty = useS(s => s.selected?.id as string | undefined);
   const canAdmin = useS(s => s.admin && !isSoloServer(s.settings.server));
   useTick(250); const me = snap?.me; const cb = CLASS_BASE[char.cls]; const need = char.level >= BAL.maxLevel ? BAL.prestigeExp : expToNext(char.level); const expv = char.level >= BAL.maxLevel ? char.pexp : char.exp;
@@ -48,8 +48,6 @@ export function Game() {
     {inScene && <div className="scenebar"><div className="pill-btn" style={{ borderColor: '#5ef2ff' }}>{LOCS[state.loc]?.name} · Kampfansicht</div><button className="pill-btn warn" onClick={() => net.send('geoFlee')}>Zur Karte</button></div>}
     {/* Chat: standardmäßig eingeklappt */}
     {chatOpen ? <Chat /> : <button className="pill-btn" style={{ position: 'absolute', right: 'calc(8px + var(--sar))', bottom: 'calc(var(--navh) + 8px + var(--sab))', zIndex: 9, pointerEvents: 'auto' }} onClick={() => set({ hudChat: true })}>Chat</button>}
-    {/* Kartenmodus: Bewegungsleiste */}
-    {!inScene && <div className="pills"><div style={{ display: 'flex', gap: 8 }}><button className="pill-btn" onClick={() => geoDo('toggleMode')}>{geoMode === 'gps' ? 'Zu virtuell wechseln' : 'GPS nutzen'}</button>{walking && <button className="pill-btn warn" onClick={() => geoDo('stop')}>Stopp</button>}</div><span style={{ width: 0 }} /></div>}
     {/* Kampfleiste: nur im Kampf */}
     {inCombat && <div className="skillbar">
       <button className={`slot${me?.auto ? ' sel' : ''}`} style={{ width: 46, height: 46 }} onClick={() => act('auto', { on: !me?.auto })}><span className="xs">Auto</span></button>

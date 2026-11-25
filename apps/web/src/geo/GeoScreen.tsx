@@ -42,13 +42,16 @@ const CSS = `
 .geo{position:absolute;inset:0;z-index:1;color:#d6f7ff;font:13px/1.3 system-ui,sans-serif}
 .geo .map{position:absolute;inset:0}
 .geo .maplibregl-ctrl-attrib{background:#0008!important;color:#8fa3b8!important;font-size:10px}
-.geo .top{position:absolute;left:50%;top:calc(76px + var(--sat));transform:translateX(-50%);max-width:calc(100% - 24px);width:max-content;z-index:5;pointer-events:none;text-align:center}
+.geo .top{position:absolute;left:50%;top:calc(76px + var(--sat));transform:translateX(-50%);max-width:calc(100% - 110px - var(--sal) - var(--sar));width:max-content;z-index:5;pointer-events:none;text-align:center}
 .geo .status{background:#04101ccc;border:1px solid #1ee8ff55;border-radius:99px;padding:4px 12px;font-size:12px;letter-spacing:.02em;overflow-wrap:anywhere;box-shadow:0 0 14px #1ee8ff22}
 .geo .status .bad{color:#ff6b7a;margin-top:2px}
-.geo .side{position:absolute;right:calc(10px + var(--sar));top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:5}
+.geo .side{position:absolute;right:calc(8px + var(--sar));top:calc(62px + var(--sat));bottom:calc(var(--navh) + 8px + var(--sab));display:flex;flex-direction:column;justify-content:safe center;gap:6px;overflow-y:auto;scrollbar-width:none;z-index:9;pointer-events:none}
+.geo .side button{pointer-events:auto}
+.geo .side::-webkit-scrollbar{display:none}
 .geo button{background:#06121fe6;color:#cdeeff;border:1px solid #1ee8ff66;border-radius:12px;min-width:44px;min-height:44px;padding:0 10px;font:inherit;box-shadow:0 0 12px #1ee8ff22}
 .geo button.on{background:#0c3a4acc;border-color:#5ef2ff;box-shadow:0 0 16px #5ef2ff66}
-.geo .side button{width:44px;padding:0}
+.geo .side button{width:44px;padding:0;flex:none}
+.geo .side .geo-mode-toggle{font-size:11px;line-height:1}
 .geo .side .map-settings-toggle{display:grid;place-items:center;border-color:#75def3;background:#092333}
 .geo .map-settings-head button{min-width:34px;min-height:34px;padding:0}
 .geo .settings [role=tablist] button{flex:1;min-height:40px;padding:0 6px}
@@ -58,7 +61,7 @@ const CSS = `
 .geo .map-previews img{display:block;width:100%;height:auto;border-radius:6px}
 .geo .settings .reset-theme{margin-top:6px;min-height:32px}
 .geo .settings details label{margin-top:8px}
-.geo .route-panel{position:absolute;z-index:8;left:50%;translate:-50% 0;bottom:calc(var(--navh) + 55px + var(--sab));width:min(358px,calc(100% - 20px));max-height:48%;overflow:auto;display:grid;gap:7px;padding:10px 12px;border:1px solid #52d2e6;border-radius:12px;background:#061824f7;box-shadow:0 8px 32px #0009}
+.geo .route-panel{position:absolute;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 55px + var(--sab));width:min(358px,calc(100% - 20px));max-height:48%;overflow:auto;display:grid;gap:7px;padding:10px 12px;border:1px solid #52d2e6;border-radius:12px;background:#061824f7;box-shadow:0 8px 32px #0009}
 .geo .route-panel button{min-height:40px;min-width:0}
 .geo .route-panel label{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
 .geo .route-pin{width:19px;height:19px;border-radius:50% 50% 50% 0;border:2px solid #fbfbdb;background:#ffac4e;box-shadow:0 0 10px #ffac4e;pointer-events:none}
@@ -70,7 +73,7 @@ const CSS = `
 .geo .mk:hover .lbl,.geo .mk:focus-visible .lbl{display:block}
 .geo .mk svg,.geo .quest-pin svg,.geo .marker-legend svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .geo .marker-cluster{width:43px;height:43px;border-radius:50%;outline:2px solid #0b233fa0;outline-offset:2px;font-size:14px}
-.geo .marker-legend{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(318px,calc(100% - 82px));max-height:calc(100% - 135px - var(--sat) - var(--sab));overflow:auto;display:grid;gap:10px;padding:12px;border:1px solid #67d7e8;border-radius:12px;background:#051421f5}
+.geo .marker-legend{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(318px,calc(100% - 82px - var(--sal) - var(--sar)));max-height:calc(100% - 135px - var(--sat) - var(--sab));overflow:auto;display:grid;gap:10px;padding:12px;border:1px solid #67d7e8;border-radius:12px;background:#051421f5}
 .geo .marker-legend h3,.geo .marker-list h3{margin:0}
 .geo .marker-legend-head,.geo .marker-list-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .geo .marker-legend-head button,.geo .marker-list-head button{min-width:34px;min-height:34px;padding:0}
@@ -83,7 +86,7 @@ const CSS = `
 .geo .property-legend{display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid #395365}
 .geo .property-legend span{display:flex;gap:4px;align-items:center;font-size:11px}
 .geo .property-legend b{border:1px solid currentColor;border-radius:4px;min-width:14px;text-align:center}
-.geo .marker-list{max-height:40dvh;overflow:auto}
+.geo .marker-list{max-height:40vh;max-height:40dvh;overflow:auto}
 .geo .marker-list ul{display:grid;gap:5px;list-style:none;padding:0;margin:8px 0 0}
 .geo .marker-list li button{width:100%;height:auto;min-height:38px;text-align:left}
 .geo .property-status{position:absolute;right:-7px;top:-6px;min-width:14px;min-height:14px;padding:0 2px;border-radius:5px;background:#071520;border:1px solid currentColor;font-size:10px;line-height:12px;pointer-events:none}
@@ -99,9 +102,9 @@ const CSS = `
 @media(prefers-reduced-motion:reduce){.geo .mob-token img,.geo .mk.boss{animation:none}}
 .geo .geo-manual{position:absolute;left:calc(14px + var(--sal));bottom:calc(var(--navh) + 16px + var(--sab));z-index:6;display:grid;justify-items:center;gap:5px}
 .geo .geo-manual select{max-width:105px;min-height:34px;background:#061824ec;color:#fff;border:1px solid #66e6fbaf;border-radius:6px}
-.geo button.geo-stick{width:88px;height:88px;padding:0;border-radius:50%;touch-action:none;background:#05132156;border:1px solid #66e6fbaf;display:grid;place-items:center;z-index:6}
+.geo button.geo-stick{width:88px;height:88px;padding:0;border-radius:50%;touch-action:none;-webkit-touch-callout:none;background:#051321af;border:1px solid #66e6fbaf;display:grid;place-items:center;z-index:6}
 .geo-stick span{width:31px;height:31px;border-radius:100%;background:#38dcf6a0;border:1px solid #abf9ff;box-shadow:0 0 14px #22c5e466;pointer-events:none}
-.geo .settings{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(290px,calc(100% - 82px));max-height:calc(100% - 100px - var(--sat) - var(--sab));overflow:auto;display:grid;gap:10px;background:#051421f2;border:1px solid #67d7e8;border-radius:12px;padding:12px}
+.geo .settings{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(290px,calc(100% - 82px - var(--sal) - var(--sar)));max-height:calc(100% - 100px - var(--sat) - var(--sab));overflow:auto;display:grid;gap:10px;background:#051421f2;border:1px solid #67d7e8;border-radius:12px;padding:12px}
 .geo .settings label{display:grid;gap:4px}
 .geo .quest-track{position:absolute;left:50%;transform:translateX(-50%);width:min(330px,calc(100% - 26px));bottom:calc(var(--navh) + 120px + var(--sab));z-index:5;border:1px solid #ffd87090;background:#111d27ed;border-radius:12px;padding:8px 10px;font-size:12px}
 .geo .quest-track .row{gap:4px;flex-wrap:wrap}
@@ -206,6 +209,8 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       style: mapStyle(preferencesRef.current)
     });
     mapRef.current = map;
+    const bounds = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => map.resize());
+    bounds?.observe(box.current!);
     map.on('load', () => {
       for (const id of ['cities', 'territories', 'ranges', 'line', 'quest-area', 'quest-route']) map.addSource(id, { type: 'geojson', data: fc([]) });
       map.addLayer({ id: 'cities-fill', type: 'fill', source: 'cities', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.08 } });
@@ -222,7 +227,13 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       applyMapPreferences(map, preferencesRef.current);
       redraw.current();
     });
-    map.on('error', () => setMapError('Kartendaten teilweise nicht verfügbar.'));
+    map.on('error', event => {
+      if ('sourceId' in event && event.sourceId === 'satellite') {
+        setMapError('Satellitendetails teilweise nicht verfügbar.');
+      } else if (preferencesRef.current.kind !== 'satellite') {
+        setMapError('Kartendaten teilweise nicht verfügbar.');
+      }
+    });
     map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
     map.on('moveend', () => {
       redrawMarkers.current();
@@ -250,7 +261,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       const name = displayName(features.find(feature => feature.sourceLayer === 'poi' || feature.sourceLayer === 'place')?.properties);
       walkTo(e.lngLat.lat, e.lngLat.wrap().lng, name ?? street, street);
     });
-    return () => { mkObj.current.forEach(o => o.m.remove()); mkObj.current.clear(); meMk.current?.remove(); meMk.current = null; questMarkers.current.forEach(m => m.remove()); questMarkers.current.clear(); routePin.current?.remove(); routePin.current = null; map.remove(); mapRef.current = null; };
+    return () => { bounds?.disconnect(); mkObj.current.forEach(o => o.m.remove()); mkObj.current.clear(); meMk.current?.remove(); meMk.current = null; questMarkers.current.forEach(m => m.remove()); questMarkers.current.clear(); routePin.current?.remove(); routePin.current = null; map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -670,6 +681,11 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
       </div>
       <div className="side">
+        <button type="button" className="geo-mode-toggle" disabled={controlsBlocked}
+          aria-label={mode === 'gps' ? 'Zu virtuell wechseln' : 'GPS nutzen'}
+          onClick={() => { setMapSettings(false); setMarkerLegend(false); choose(mode === 'gps' ? 'virtual' : 'gps'); }}>
+          {mode === 'gps' ? 'Virtuell' : 'GPS'}
+        </button>
         <button type="button" className={mapSettings ? 'on map-settings-toggle' : 'map-settings-toggle'} onClick={() => { setMarkerLegend(false); setMapSettings(v => !v); }} aria-label="Karteneinstellungen" aria-controls="map-settings" aria-expanded={mapSettings}>
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2zm6-2v14m6-12v14"/></svg>
         </button>
@@ -712,7 +728,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         </label>
         {gpsErr && <button onClick={() => setGpsRetry(n => n + 1)}>GPS erneut versuchen</button>}
       </MapDesignMenu>}
-      {!hidden && !controlsBlocked && !mapSettings && !markerLegend && !routeTarget && !travel && mode === 'virtual' && info.hasMe &&
+      {!hidden && !controlsBlocked && !mapSettings && !markerLegend && !routeTarget && (!travel || travel.status === 'arrived') && mode === 'virtual' && info.hasMe &&
         <Joystick available={me?.travelModes ?? ['walk', 'run']} bearing={() => mapRef.current?.getBearing() ?? 0} onStart={() => { setRouteTarget(null); setPickTarget(false); setSel(null); setSelPlayer(null); setClusterSelection([]); setFollow(true); followRef.current = true; }} />}
       {!hidden && !controlsBlocked && !mapSettings && mode === 'virtual' && me && routeTarget &&
         <RoutePlanner target={routeTarget} start={me} available={me.travelModes ?? ['walk', 'run']}
