@@ -1,0 +1,23 @@
+name: CI
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: nam, POSTGRES_PASSWORD: nam, POSTGRES_DB: nam }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U nam" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Integrationstest gegen PostgreSQL (Migrationen)
+        run: DATABASE_URL=postgres://nam:nam@localhost:5432/nam npm test
+      - uses: actions/upload-artifact@v4
+        with: { name: web-pwa, path: apps/web/dist }
