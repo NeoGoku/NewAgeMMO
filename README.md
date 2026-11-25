@@ -8,7 +8,7 @@ Kostenloses, grafikbasiertes Point-and-Click-MMORPG im alternativen Jahr 2030 (s
 | **Browser (GitHub Pages)** | https://neogoku.github.io/NewAgeMMO/ |
 | **Windows-PWA** | Link oben in Edge/Chrome öffnen → Adressleiste „App installieren“ (Start → eigenes Fenster) |
 | **Android-APK** | https://github.com/NeoGoku/NewAgeMMO/releases/latest (Datei `NewAgeMMO-*.apk`) |
-| **Releases** | https://github.com/NeoGoku/NewAgeMMO/releases |
+| **Releases** | https://github.com/NeoGoku/NewAgeMMO/releases (aktuell: [v0.2.4](https://github.com/NeoGoku/NewAgeMMO/releases/tag/v0.2.4), enthält APK + Web-ZIP) |
 
 > Hinweis zur Verfügbarkeit: Die Links werden erst aktiv, nachdem (1) GitHub Pages einmalig auf „GitHub Actions“ gestellt ist (Settings → Pages → Source) und (2) der Workflow auf einem `v*`-Tag bzw. `main` gelaufen ist. Siehe [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
