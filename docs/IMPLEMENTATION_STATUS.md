@@ -14,7 +14,7 @@
 - Kartenansicht direkt oberhalb der Zoomtasten und in den Spieleinstellungen. Typ und Style können unabhängig gewechselt werden. Die alten Einstellungen werden gelesen und in das getrennte Schema übernommen.
 - Valhalla liefert Straßengeometrie für Start, Pause, Fortsetzen, Abbruch und Zielwechsel. Online gilt Serverzeit. Neuberechnung erneuert die Vorschau. Bei einem Routingfehler bleibt für Gehen und Rennen eine ausdrücklich ausgewählte, gestrichelt angezeigte Luftlinienreise bis 2 km möglich. Öffentlicher HTTPS-Routendienst und Geocoding stehen aus.
 - Kartencluster gruppieren nahe Marker auf der aktuellen Projektion. Kategorien, Questmarker und Spieler lassen sich filtern. Die Typ- und Style-Auswahl erhält die Spielkoordinaten und stellt sieben eigenständige Vektorstile bereit.
-- Der geografische Immobilienmarkt nutzt reale OSM-Umrisse. Online lädt der Server Wohn- und Gewerbegebäude bedarfsgerecht. Fläche und Preis verwenden den Grundriss, Geschossfläche und Zimmerzahl sind Schätzungen. Gekaufte Gebäude behalten ihre gespeicherten Attribute und ihren kostenfreien Schnellreisepunkt. Geografische Vermietung, Baugrundstücke, ALKIS und zusätzliche Eigentumsplätze stehen aus.
+- Der geografische Immobilienmarkt nutzt reale OSM-Umrisse. Die gebündelte Braunschweig-Referenz deckt Innenstadt, Weststadt und Heidberg ab. Online lädt der Server Wohn- und Gewerbegebäude bedarfsgerecht. Fläche und Preis verwenden den Grundriss, Geschossfläche und Zimmerzahl sind Schätzungen. Gekaufte Gebäude behalten ihre gespeicherten Attribute und ihren kostenfreien Schnellreisepunkt. Geografische Vermietung, Baugrundstücke, ALKIS und zusätzliche Eigentumsplätze stehen aus.
 
 ## Regionale Inhalte und Online-Moderation
 
@@ -51,9 +51,9 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Auto-Farm (zeit-/gebietsbegrenzt, Tränke, Abbruchbedingungen) | ◐ |
 | PostgreSQL-Speicher + Migrationen | ◐ Code vorhanden, **nicht gegen echte DB getestet** (CI-Job vorbereitet) |
 | PWA (Manifest, Service Worker, Icons) | ◐ Build ok, Installation nicht geprüft |
-| Android-APK (Capacitor) | ✖ **nicht gebaut** (kein Android-SDK in dieser Umgebung); Konfiguration + Workflow `android.yml` vorhanden |
+| Android-APK (Capacitor) | ◔ Release-Workflow mit festem Fingerabdruck. Signierter Build erfordert die bisherigen Schlüssel und GitHub-Einstellungen. |
 | Docker Compose | ◐ nicht ausgeführt |
-| Admin-Oberfläche | ✖ nur Server-Befehle (`admin`), keine UI |
+| Admin-Oberfläche | ✔ Dashboard, Audit, Kick, Mute und Ban serverseitig geprüft |
 | Lasttest 50–100 Spieler | ✖ nicht gemessen |
 | Physische Android-Abnahme | ✖ offen |
 

@@ -8,7 +8,7 @@
 - [implementiert] P1: persistente OSM-Regionen in PostgreSQL/PostGIS und eine tägliche geografische Erkundungsquest.
 - [implementiert] Getrennte Kartentypen und Styles mit Vorschauen, gemeinsamer Bedienung und Migration bisheriger Einstellungen.
 - [implementiert] Valhalla-Routing mit erzwungener Neuberechnung, persistenter Reise und separater kurzer Luftlinienoption. Docker-Setup und Prüfung mit OSM-Straßendaten eingerichtet. Öffentliches Routing benötigt einen HTTPS-Host.
-- [teilweise] Braunschweig-Katalogimport mit Herkunfts- und Abdeckungsprüfung. Online ist regionaler OSM-Nachimport für Wohn- und Gewerbegebäude eingerichtet. Kauf, Rückverkauf, Einrichtung und persönliche Schnellreise nutzen persistente Eigentumsnachweise. Geografische Vermietung, Baugrundstücke und ALKIS stehen aus.
+- [teilweise] Echte OSM-Gebäude aus Innenstadt, Weststadt und Heidberg sind als Braunschweig-Katalog mit Herkunfts- und Abdeckungsprüfung gebündelt. Online ist regionaler OSM-Nachimport für Wohn- und Gewerbegebäude eingerichtet. Kauf, Rückverkauf, Einrichtung und persönliche Schnellreise nutzen persistente Eigentumsnachweise. Geografische Vermietung, Baugrundstücke und ALKIS stehen aus.
 - [implementiert] P1: geografische Feldnotizen und Patrouillen. Gilden können im Kolosseum und an der Moorwacht Gebiete halten und im gegenseitigen Gildenkrieg erobern.
 - [implementiert] P1: gemeinsame Dungeon-Instanzen an den drei vorhandenen Eingängen mit getrennten Kämpfen und täglichen Bossbelohnungen.
 
@@ -23,7 +23,7 @@
 9. [offen] Handgemachte Endassets (siehe ASSET_LICENSES.md).
 
 ## v2-Stand
-- [implementiert/geprüft] Geo-System (Server: Spawns, Anti-Cheat, Datenschutz; Client: MapLibre/OSM), PostGIS-Migration (gegen lokales PostgreSQL 16+PostGIS getestet), Solo-Modus im Browser, Pages/Release-Workflows (noch nicht auf GitHub gelaufen).
+- [implementiert/geprüft] Geo-System (Server: Spawns, Anti-Cheat, Datenschutz; Client: MapLibre/OSM), PostGIS-Migration (gegen lokales PostgreSQL 16+PostGIS getestet), Solo-Modus im Browser, Pages- und Release-Workflows auf GitHub.
 - [offen] Öffentlicher Server (benötigt Render-/Neon-Zugang des Auftraggebers), Weitere Geo-Quests, Gilden-Territorien, weitere Grafikpolitur.
 
 ## Map-First (aktuell)

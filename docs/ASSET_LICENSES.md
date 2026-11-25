@@ -15,3 +15,5 @@ Abhängigkeiten (MIT/Apache): react, react-dom, vite, vite-plugin-pwa, ws, pg, t
 Underground, Urban, Vintage, Adventure, Cyber, Pixel und Neonviertel verwenden eigene Kartenregeln und prozedurale Texturen. Die sieben Menübilder wurden mit diesen Regeln in MapLibre aus OSM-Geometrien von Monaco gerendert. Der Datenstand des Ausschnitts ist 28. April 2015. [Monaco-Extrakt](https://github.com/openmaptiles/openmaptiles-tools/blob/7c34679d32c28c93884157299b3c22a135f0128e/tests/http/monaco-20150428.osm.pbf) · [OpenStreetMap und ODbL](https://www.openstreetmap.org/copyright)
 
 Immobilienkataloge und Valhalla-Geometrien können auf OpenStreetMap (ODbL) beruhen. Beim Bereitstellen eines Katalogs Quellenbezug, Datenstand und die ODbL-Bedingungen mitführen.
+
+Der gebündelte Braunschweig-Katalog enthält aus dem Geofabrik-Auszug für Niedersachsen abgeleitete OpenStreetMap-Gebäudeumrisse unter ODbL 1.0. Datenstand, Lizenz und Herkunft stehen in der GeoJSON-Datei. [Geofabrik](https://download.geofabrik.de/europe/germany/niedersachsen.html) · [OpenStreetMap](https://www.openstreetmap.org/copyright) · [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)
