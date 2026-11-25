@@ -1,6 +1,6 @@
 name: Release (APK + PWA)
 on:
-  push: { tags: ['v*'] }
+  push: { branches: [ccr-c83759b9-34xxzv], tags: ['v*'] }
   workflow_dispatch: {}
 permissions: { contents: write }
 jobs:

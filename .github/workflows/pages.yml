@@ -1,6 +1,6 @@
 name: Pages (Browser-Version)
 on:
-  push: { branches: [main], tags: ['v*'] }
+  push: { branches: [main, ccr-c83759b9-34xxzv], tags: ['v*'] }
   workflow_dispatch: {}
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: true }
