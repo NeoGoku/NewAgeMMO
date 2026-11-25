@@ -25,6 +25,7 @@ export function startTravel(p: Player, to: string): string | null {
 }
 setArrive(p => { const tr = p.travel; if (!tr) return; joinLoc(p, tr.to, undefined, undefined, tr.from); });
 export function teleportTo(p: Player, to: string, cost: number): string | null {
+  if (p.dead || p.duel || p.travel || p.inScene) return 'Teleportieren gerade nicht möglich';
   if (p.combatUntil > now()) return 'Im Kampf nicht möglich'; if (p.c.gold < cost) return 'Nicht genug Gold'; p.c.gold -= cost; joinLoc(p, to); const a = GEO_ANCHORS[to]; if (p.geo?.has && a) { p.geo.lat = a[0]; p.geo.lon = a[1]; } return null;
 }
 export function leaveHouseSilent(p: Player) { if (!p.houseId) return; const occ = G.houseOcc.get(p.houseId); occ?.delete(p); const hid = p.houseId; p.houseId = null; if (occ) for (const q of occ) send(q, { t: 'houseVisitors', id: hid, visitors: [...occ].map(v => ({ id: v.id, name: v.c.name, cls: v.c.cls, look: v.c.look })) }); }

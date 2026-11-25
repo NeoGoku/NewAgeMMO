@@ -3,7 +3,8 @@
 ## Veröffentlichung und nächste Integrationen
 - [lokal geprüft] P0: Kampfbelohnung, Levelaufstieg, Logout und Reconnect mit JSON und PostgreSQL 16 + PostGIS. Browser-Solo: Service Worker und IndexedDB-Reconnect in Chromium.
 - [offen] PR #1 erst nach grüner GitHub-CI mergen. Danach Pages unter `/NewAgeMMO/` und neue Release-Assets prüfen.
-- [offen] P1: eigenständige Teleporter, abgesicherte GPS-/Virtuell-Wechsel, begrenzter OSM-POI-Import und Gebietskontrolle.
+- [implementiert/geprüft] P1: eigenständige Teleportportale mit Distanz-, Modus- und Freischaltungsprüfung sowie virtuelles Routing mit serverseitiger Reisezeit.
+- [offen] P1: vollständiger GPS-Manipulationsschutz über Sitzungswechsel, begrenzter OSM-POI-Import und Gebietskontrolle.
 
 1. [offen] APK-Build via GitHub-Actions `android.yml` ausführen/prüfen; Gradle-Ausgabe kontrollieren.
 2. [offen] Docker-Compose + PostgreSQL-Lauf (`DATABASE_URL`) verifizieren, Migrationen testen.
@@ -21,4 +22,4 @@
 
 ## Map-First (aktuell)
 - [implementiert/geprüft] Karte als Hauptansicht, Ereignisleiste (5 Bereiche + Mehr), kompakte Charakteranzeige, eingeklappter Chat, Kampfskills nur im Kampf, Szenenwechsel per Server-Nachricht, NPCs/Werkstätten als Kartenobjekte mit Nähe-Interaktion.
-- [offen] Eroberbare Gebiete (Gilden-Territorien), Teleporter-Auswahl auf der Karte als Ortsmarken, Gilden-/Housing-Objekte aus realen Positionen, Geo-Quests, Dungeon-Betretung mit eigener Karten-Ansicht, Erprobung auf echtem Android-Gerät.
+- [offen] Eroberbare Gebiete (Gilden-Territorien), Gilden-/Housing-Objekte aus realen Positionen, Geo-Quests, Dungeon-Betretung mit eigener Karten-Ansicht, Erprobung auf echtem Android-Gerät.

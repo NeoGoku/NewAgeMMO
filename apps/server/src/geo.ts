@@ -1,13 +1,14 @@
+import { publishProgress } from './character-save';
 import { GEO, haversine, moveToward, cellOf, cellId, hash32, rng, quant, type GeoObj } from '@nam/shared';
 import { GEO_ANCHORS, GEO_START, LOCS, MOBS, NODES, ITEMS, NPCS, placeNear, type MobDef } from '@nam/game-data';
-import { G, now, send, sys, uid, type Player } from './state';
+import { deferMessages, G, now, send, sys, uid, type Player } from './state';
 import { H } from './handlers';
-import { setLocSilent, enterScene, exitScene } from './world';
+import { setLocSilent, enterScene, exitScene, teleportTo } from './world';
 import { questEvent } from './quests';
 import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 const S = (v: any) => (typeof v === 'string' ? v : '');
-const NUM = (v: any, a: number, b: number) => { const x = Number(v); return Number.isFinite(x) && x >= a && x <= b ? x : null; };
+const NUM = (v: unknown, a: number, b: number) => typeof v === 'number' && Number.isFinite(v) && v >= a && v <= b ? v : null;
 const anchorList = Object.entries(GEO_ANCHORS);
 const MOB_LIST = Object.values(MOBS).filter(m => m.role === 'normal'); const ELITES = Object.values(MOBS).filter(m => m.role === 'elite'); const BOSSES = Object.values(MOBS).filter(m => m.role === 'boss');
 const DUNGEONS = Object.values(LOCS).filter(l => l.kind === 'boss' || l.theme === 'dungeon');
@@ -20,6 +21,13 @@ const bucket = () => Math.floor(now() / GEO.spawnBucketMs);
 const STATIC: GeoObj[] = [];
 for (const n of Object.values(NPCS)) { const [la, lo] = placeNear(n.loc, 'npc:' + n.id); STATIC.push({ id: 'x:npc:' + n.id, k: 'npc', def: n.id, lat: la, lon: lo, name: `${n.name} · ${n.title}`, r: 40, extra: { loc: n.loc, services: n.services } }); }
 for (const l of Object.values(LOCS)) for (const h of l.hotspots) if (h.kind === 'station') { const [la, lo] = placeNear(l.id, 'st:' + h.id); STATIC.push({ id: 'x:st:' + h.id, k: 'station', def: h.prof!, lat: la, lon: lo, name: h.label, r: 40, extra: { loc: l.id } }); }
+const PORTALS: GeoObj[] = Object.values(NPCS)
+  .filter(npc => npc.services.includes('teleport'))
+  .map(npc => {
+    const [lat, lon] = GEO_ANCHORS[npc.loc];
+    return { id: 'x:tp:' + npc.loc, k: 'teleporter', def: npc.loc, lat, lon, name: 'Teleportportal · ' + LOCS[npc.loc].name };
+  });
+STATIC.push(...PORTALS);
 export function geoObjects(lat: number, lon: number, radius = GEO.viewM): GeoObj[] {
   const out: GeoObj[] = []; for (const o of STATIC) if (haversine(lat, lon, o.lat, o.lon) <= radius) out.push(o); const [cy, cx] = cellOf(lat, lon); const n = Math.ceil(radius / 280) + 1; const b = bucket(); const t = now();
   for (let dy = -n; dy <= n; dy++) for (let dx = -n; dx <= n; dx++) {
@@ -39,7 +47,7 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM): GeoObj
   return out;
 }
 function gs(p: Player) { return p.geo ||= { on: false, gps: false, visible: true, lat: GEO_START[0], lon: GEO_START[1], has: false, mode: 'virtual', dest: null, lastT: 0, strikes: [], lockUntil: 0, flags: [], lastPush: 0, day: 0, dayM: 0, visited: new Set() }; }
-H.geoConsent = (p, m) => { const g = gs(p); g.on = !!m.on; g.gps = !!m.gps && !!m.on; g.visible = m.visible !== false; const c = p.c; c.geo = { consent: g.on, visible: g.visible, qlat: c.geo?.qlat ?? 0, qlon: c.geo?.qlon ?? 0, gpsM: c.geo?.gpsM ?? 0, dayM: c.geo?.dayM ?? 0, day: c.geo?.day ?? 0 }; if (g.on && !g.has) { if (c.geo.qlat) { g.lat = c.geo.qlat; g.lon = c.geo.qlon; } g.has = true; } p.dirty = true; if (g.on) pushGeo(p, true); else send(p, { t: 'geo', off: true }); };
+H.geoConsent = (p, m) => { const g = gs(p); g.on = !!m.on; g.gps = !!m.gps && !!m.on; g.mode = g.gps ? 'gps' : 'virtual'; g.dest = null; g.visible = m.visible !== false; const c = p.c; c.geo = { consent: g.on, visible: g.visible, qlat: c.geo?.qlat ?? 0, qlon: c.geo?.qlon ?? 0, gpsM: c.geo?.gpsM ?? 0, dayM: c.geo?.dayM ?? 0, day: c.geo?.day ?? 0 }; if (g.on && !g.has) { if (c.geo.qlat) { g.lat = c.geo.qlat; g.lon = c.geo.qlon; } g.has = true; } p.dirty = true; if (g.on) pushGeo(p, true); else send(p, { t: 'geo', off: true }); };
 H.geoWipe = (p) => { const g = gs(p); g.on = false; g.has = false; g.dest = null; g.visited.clear(); p.c.geo = undefined; for (const h of G.houses.values()) if (h.ownerId === p.c.id) { delete (h as any).geo; G.store.put('houses', h.id, h); G.store.geoDel?.('house:' + h.id); } p.dirty = true; send(p, { t: 'geo', off: true }); sys(p, 'Alle gespeicherten Standortdaten wurden gelöscht.'); };
 function strike(p: Player, flag: string) { const g = gs(p); const t = now(); g.strikes = g.strikes.filter(x => t - x < 10 * 60e3); g.strikes.push(t); if (!g.flags.includes(flag)) g.flags.push(flag); if (g.strikes.length >= 6) { g.lockUntil = t + 10 * 60e3; g.flags.push('locked'); sys(p, 'Standortfunktionen wegen unplausibler Bewegungen 10 Min. gesperrt.', 'warn'); } setTimeout(() => { g.flags = g.flags.filter(f => f !== flag); }, 8000); }
 H.geoPos = (p, m) => {
@@ -49,8 +57,22 @@ H.geoPos = (p, m) => {
     if (d < 6000) { const c = p.c.geo!; const day = Math.floor(t / 864e5); if (c.day !== day) { c.day = day; c.dayM = 0; } const credit = Math.min(d, Math.max(0, 10000 - c.dayM)); if (credit >= 20 && acc <= 50) { c.gpsM += credit; c.dayM += credit; const before = Math.floor((c.gpsM - credit) / 100), after = Math.floor(c.gpsM / 100); if (after > before) { addTrainExp(p, (after - before) * 2); p.dirty = true; } } } }
   g.lat = lat; g.lon = lon; g.has = true; g.lastT = t; g.mode = 'gps'; g.dest = null; afterMove(p);
 };
-H.geoWalk = (p, m) => { const g = gs(p); if (!g.on) return 'Standort nicht freigegeben'; if (g.lockUntil > now()) return 'Standort gesperrt'; const lat = NUM(m.lat, -85, 85), lon = NUM(m.lon, -180, 180); if (lat === null || lon === null) return 'Ungültig'; if (!g.has) { g.has = true; } if (haversine(g.lat, g.lon, lat, lon) > 200000) return 'Ziel zu weit für virtuelles Laufen (max. 200 km)'; g.dest = { lat, lon }; g.mode = 'virtual'; };
-H.geoStop = (p) => { gs(p).dest = null; };
+const virtualSpeed = (p: Player) => GEO.virtualSpeed * (p.c.equipment.mount ? 1.8 : 1);
+H.geoWalk = (p, m) => {
+  const g = gs(p);
+  if (!g.on) return 'Virtueller Modus nicht aktiv';
+  if (g.lockUntil > now()) return 'Standort gesperrt';
+  if (g.gps) return 'Wechsle zuerst in den virtuellen Modus';
+  if (p.dead || p.travel || p.inScene || p.duel) return 'Bewegung gerade nicht möglich';
+  const lat = NUM(m.lat, -85, 85), lon = NUM(m.lon, -180, 180);
+  if (lat === null || lon === null) return 'Ungültige Koordinaten';
+  const distance = haversine(g.lat, g.lon, lat, lon);
+  if (distance > 200000) return 'Ziel zu weit für virtuelles Laufen (max. 200 km)';
+  g.dest = distance > 0 ? { lat, lon } : null;
+  pushGeo(p);
+  return { etaSeconds: Math.ceil(distance / virtualSpeed(p)) };
+};
+H.geoStop = (p) => { const g = gs(p); g.dest = null; if (g.on) pushGeo(p); };
 function afterMove(p: Player) {
   const g = gs(p); const c = p.c; c.geo ||= { consent: true, visible: g.visible, qlat: 0, qlon: 0, gpsM: 0, dayM: 0, day: 0 }; c.geo.qlat = quant(g.lat, GEO.playerQuantDeg); c.geo.qlon = quant(g.lon, GEO.playerQuantDeg);
   for (const [k, a] of anchorList) if (haversine(g.lat, g.lon, a[0], a[1]) <= a[2] && !g.visited.has(k)) { g.visited.add(k); if (!c.discovered.includes(k)) { c.discovered.push(k); sys(p, `Reale Entdeckung: ${LOCS[k].name}!`, 'quest'); p.dirty = true; } questEvent(p, 'visit', k); }
@@ -59,11 +81,11 @@ function afterMove(p: Player) {
 }
 export function geoTick() {
   const t = now(); for (const p of G.players.values()) { const g = p.geo; if (!p.online || !g?.on || !g.has) continue;
-    if (g.dest) { const sp = GEO.virtualSpeed * (p.c.equipment.mount ? 1.8 : 1) * 1; const r = moveToward(g.lat, g.lon, g.dest.lat, g.dest.lon, sp); g.lat = r.lat; g.lon = r.lon; g.lastT = t; if (r.arrived) g.dest = null; afterMove(p); }
+    if (g.dest && !p.dead && !p.inScene && !p.travel && !p.duel) { const sp = virtualSpeed(p); const r = moveToward(g.lat, g.lon, g.dest.lat, g.dest.lon, sp); g.lat = r.lat; g.lon = r.lon; g.lastT = t; if (r.arrived) g.dest = null; afterMove(p); }
     if (t - g.lastPush > 2000) pushGeo(p); } }
 export function pushGeo(p: Player, force = false) {
   const g = gs(p); const t = now(); if (!g.on) return; g.lastPush = t; const players = [...G.players.values()].filter(q => q !== p && q.online && q.geo?.on && q.geo.has && q.geo.visible && haversine(g.lat, g.lon, q.geo.lat, q.geo.lon) <= GEO.viewM).map(q => ({ id: q.id, name: q.c.name, cls: q.c.cls, lvl: q.c.level, lat: quant(q.geo!.lat, GEO.playerQuantDeg), lon: quant(q.geo!.lon, GEO.playerQuantDeg) }));
-  send(p, { t: 'geo', me: { lat: g.lat, lon: g.lon, mode: g.mode, dest: g.dest, flags: g.flags.slice(-3), gpsM: Math.round(p.c.geo?.gpsM || 0), dayM: Math.round(p.c.geo?.dayM || 0) }, objs: geoObjects(g.lat, g.lon), players, rev: t }); void force;
+  send(p, { t: 'geo', me: { lat: g.lat, lon: g.lon, mode: g.mode, dest: g.dest, speed: g.dest ? virtualSpeed(p) : 0, etaSeconds: g.dest ? Math.ceil(haversine(g.lat, g.lon, g.dest.lat, g.dest.lon) / virtualSpeed(p)) : 0, flags: g.flags.slice(-3), gpsM: Math.round(p.c.geo?.gpsM || 0), dayM: Math.round(p.c.geo?.dayM || 0) }, objs: geoObjects(g.lat, g.lon), players, rev: t }); void force;
 }
 const findLocWith = (mob: string) => Object.values(LOCS).filter(l => l.spawns.some(s => s.mob === mob) && !l.safe).sort((a, b) => a.lvl[0] - b.lvl[0])[0]?.id || 'stadtpark';
 H.geoInteract = (p, m) => {
@@ -73,6 +95,26 @@ H.geoInteract = (p, m) => {
   const taken = (ttl = GEO.spawnBucketMs) => G.geoTaken.set(o.id, now() + ttl);
   switch (o.k) {
     case 'npc': { const r = H.npc(p, { id: o.def }); return typeof r === 'string' ? r : { npc: o.def }; }
+    case 'teleporter': {
+      const destinations = Object.values(LOCS)
+        .filter(loc => loc.tele !== undefined && GEO_ANCHORS[loc.id] && loc.id !== o.def && p.c.discovered.includes(loc.id))
+        .map(loc => ({ id: loc.id, name: loc.name, cost: loc.tele }));
+      if (m.to === undefined) return { destinations };
+      const destination = destinations.find(loc => loc.id === m.to);
+      if (!destination || destination.cost === undefined) return 'Ziel nicht verfügbar';
+      if (g.gps) return 'Teleportieren ist im virtuellen Modus möglich';
+      let error: string | null = null;
+      const notify = deferMessages(p, () => {
+        error = teleportTo(p, destination.id, destination.cost!);
+        if (error) return;
+        g.dest = null;
+        g.lastT = now();
+        afterMove(p);
+      });
+      if (error) return error;
+      publishProgress(p, undefined, () => { notify(); pushGeo(p); });
+      return { teleported: destination.name };
+    }
     case 'station': { setLocSilent(p, o.extra.loc); return { station: o.def }; }
     case 'city': { setLocSilent(p, o.def); return { city: o.def, text: LOCS[o.def].desc }; }
     case 'mob': { const md = MOBS[o.def]; const locId = findLocWith(o.def); if (p.c.level + 15 < md.lvl && md.role !== 'normal') return 'Dieser Gegner ist weit über deiner Stufe'; taken(10 * 60e3); enterScene(p, locId); const l = locOf(p); const mob = spawnMob(l, o.def, true); mob.maxHp = mob.hp = md.hp; mob.skills = md.skills; mob.add = true; mob.x = 70; mob.y = 70; mob.hx = 70; mob.hy = 70; mob.threat[p.id] = 1; p.target = mob.uid; p.auto = true; sys(p, `Begegnung: ${md.name} (Lv ${md.lvl})`, 'warn'); return { scene: locId }; }

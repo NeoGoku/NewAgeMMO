@@ -52,5 +52,6 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Keine Stadtansicht/„Erde“-Schaltfläche mehr | ✔ |
 | NPCs, Werkstätten, Teleporter als Kartenobjekte mit Nähe-Interaktion | ✔ Server-Logik; Dialog über Karte geprüft (Server-Test) |
 | Monster/Dungeons → Kampfszene und Zurück zur Karte | ✔ Logik; Szene im Browser nicht separat geprüft |
+| Teleportportale und virtuelle Reisezeit | ✔ Geo-Integrationstest und Web-Build |
 | Eroberbare Gebiete | ✖ offen |
 | Ereignisleiste, Kampfskills nur im Kampf, Chat eingeklappt | ✔ |

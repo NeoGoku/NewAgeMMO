@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { GEO, haversine, type GeoObj, type GeoPlayer } from '@nam/shared';
-import { set } from '../store';
+import { set, useS } from '../store';
 import { geoBus } from './bus';
 import { net } from '../net';
 import { toast } from '../store';
@@ -11,13 +11,14 @@ const KEY = 'nam.geo.consent';
 const BERLIN = { lat: 52.52, lon: 13.405 };
 type Consent = 'gps' | 'virtual' | null;
 type Mode = 'gps' | 'virtual';
-interface Me { lat: number; lon: number; mode?: string; speed?: number; flags?: string[] }
+interface Me { lat: number; lon: number; mode?: string; speed?: number; etaSeconds?: number; dest?: { lat: number; lon: number } | null; flags?: string[] }
+interface Destination { id: string; name: string; cost: number }
 
 const readConsent = (): Consent => { try { const v = localStorage.getItem(KEY); return v === 'gps' || v === 'virtual' ? v : null; } catch { return null; } };
 const saveConsent = (v: string) => { try { localStorage.setItem(KEY, v); } catch { /* kein Storage */ } };
 
-const COL: Record<string, string> = { station: '#f0a050', mob: '#e5484d', node: '#46c46a', dungeon: '#9b59ff', city: '#22d3ee', house: '#f5c542', npc: '#ffe066', poi: '#ffffff' };
-const GLYPH: Record<string, string> = { station: '⚒', node: '◆', dungeon: '⛩', city: '🏛', house: '⌂', npc: '!', poi: '•' };
+const COL: Record<string, string> = { teleporter: '#65a8ff', station: '#f0a050', mob: '#e5484d', node: '#46c46a', dungeon: '#9b59ff', city: '#22d3ee', house: '#f5c542', npc: '#ffe066', poi: '#ffffff' };
+const GLYPH: Record<string, string> = { teleporter: '⇄', station: '⚒', node: '◆', dungeon: '⛩', city: '🏛', house: '⌂', npc: '!', poi: '•' };
 
 function circle(lat: number, lon: number, r: number, n = 64) {
   const pts: number[][] = []; const dLat = r / 111320; const dLon = r / (111320 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
@@ -49,6 +50,7 @@ const CSS = `
 .geo .pop .dim{color:#7fa3b8;font-size:12px}
 .geo .pop .row{display:flex;gap:8px;margin-top:10px}
 .geo .pop .row button{flex:1}
+.geo .portal-destinations{display:grid;gap:6px;margin-top:8px;max-height:28vh;overflow:auto}
 .geo .dlg{position:absolute;inset:0;background:#02050acc;display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
 .geo .dlg>div{background:#04101cf5;border:1px solid #1ee8ff88;border-radius:16px;padding:18px;max-width:420px;box-shadow:0 0 40px #1ee8ff33}
 .geo .dlg h2{margin:0 0 8px;color:#eaffff;font-size:18px}
@@ -73,6 +75,9 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
   const selRef = useRef<string | null>(null);
   const centered = useRef(false);
 
+  const gold = useS(s => s.char?.gold ?? 0);
+  const [destinations, setDestinations] = useState<{ portal: string; rows: Destination[] } | null>(null);
+  const [eta, setEta] = useState(0);
   const [consent, setConsent] = useState<Consent>(readConsent);
   const [mode, setMode] = useState<Mode>(readConsent() === 'gps' ? 'gps' : 'virtual');
   const [follow, setFollow] = useState(true);
@@ -87,7 +92,7 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
   followRef.current = follow; modeRef.current = mode; selRef.current = sel;
   useEffect(() => { if (!hidden) setTimeout(() => mapRef.current?.resize(), 50); }, [hidden]);
   useEffect(() => {
-    const onMode = () => { if (modeRef.current === 'gps') { setMode('virtual'); net.send('geoStop', {}); } else if (consentRef.current === 'gps') setMode('gps'); else choose('gps'); };
+    const onMode = () => { choose(modeRef.current === 'gps' ? 'virtual' : 'gps'); };
     const onStop = () => { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); };
     const onWipe = () => wipe();
     const onRecenter = () => { const p = myPos(); if (p) { setFollow(true); mapRef.current?.easeTo({ center: [p.lon, p.lat], zoom: 16, bearing: 0 }); } };
@@ -130,15 +135,16 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
 
   const consentRef = useRef<Consent>(consent); consentRef.current = consent;
   function consentOk() { return consentRef.current !== null; }
-  function walkTo(lat: number, lon: number) {
-    targetRef.current = { lat, lon }; setWalking(true); net.send('geoWalk', { lat, lon }); redraw.current();
+  async function walkTo(lat: number, lon: number) {
+    const result = await net.req('geoWalk', { lat, lon });
+    if (result.t === 'err') toast(result.err, 'err');
   }
 
   // Zeichnen
   redraw.current = () => {
     const map = mapRef.current; if (!map) return;
     const me = myPos(); const objs = objsRef.current;
-    const near = (o: GeoObj) => !!me && haversine(me.lat, me.lon, o.lat, o.lon) <= GEO.interactM;
+    const near = (o: GeoObj) => !!me && haversine(me.lat, me.lon, o.lat, o.lon) <= GEO.interactM + (o.r || 0);
     // Objekt-Marker
     const seen = new Set<string>();
     for (const o of objs) {
@@ -191,8 +197,9 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
         for (const [id, mk] of mkPl.current) if (!seen.has(id)) { mk.remove(); mkPl.current.delete(id); }
       }
       if (me && !centered.current && map) { centered.current = true; map.jumpTo({ center: [me.lon, me.lat], zoom: 16 }); }
-      const tg = targetRef.current; if (tg && me && haversine(me.lat, me.lon, tg.lat, tg.lon) < 8) { targetRef.current = null; setWalking(false); }
-      if (me && me.speed !== undefined && me.speed < 0.1 && walking && !tg) setWalking(false);
+      targetRef.current = me?.dest ?? null;
+      setWalking(!!me?.dest);
+      setEta(me?.etaSeconds ?? 0);
       setInfo({ n: objsRef.current.length, speed: me?.speed ?? 0, flags: me?.flags ?? [], hasMe: !!me });
       redraw.current(); bump(x => x + 1);
     });
@@ -203,7 +210,7 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
   // GPS
   useEffect(() => {
     if (mode !== 'gps' || consent === null) return;
-    if (!('geolocation' in navigator)) { setGpsErr('GPS wird von diesem Gerät nicht unterstützt.'); toast('GPS nicht verfügbar – virtueller Modus', 'err'); setMode('virtual'); return; }
+    if (!('geolocation' in navigator)) { setGpsErr('GPS wird von diesem Gerät nicht unterstützt.'); toast('GPS nicht verfügbar – virtueller Modus', 'err'); choose('virtual'); return; }
     setGpsErr(''); let last = 0;
     const id = navigator.geolocation.watchPosition(p => {
       const { latitude: lat, longitude: lon, accuracy: acc } = p.coords; gpsPos.current = { lat, lon, acc };
@@ -212,7 +219,7 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
       redraw.current();
     }, err => {
       const msg = err.code === 1 ? 'Standortzugriff verweigert.' : err.code === 2 ? 'Standort nicht verfügbar.' : 'Zeitüberschreitung bei der Ortung.';
-      setGpsErr(msg + ' Wechsle auf virtuellen Modus.'); toast(msg + ' Virtueller Modus aktiv.', 'err'); setMode('virtual');
+      setGpsErr(msg + ' Wechsle auf virtuellen Modus.'); toast(msg + ' Virtueller Modus aktiv.', 'err'); choose('virtual');
     }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
     return () => navigator.geolocation.clearWatch(id);
   }, [mode, consent]);
@@ -234,18 +241,27 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
     meRef.current = null; objsRef.current = []; targetRef.current = null; setWalking(false); setConsent(null); setInfo({ n: 0, speed: 0, flags: [], hasMe: false }); redraw.current(); toast('Standortdaten gelöscht');
   }
   function stop() { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); }
-  async function interact(id: string) {
-    setBusy(true); try { const r: any = await net.req('geoInteract', { id }); if (r.t === 'err' || r.err) { toast(r.err || 'Interaktion fehlgeschlagen', 'err'); return; }
-      if (r.station) set({ stationProf: r.station, panel: 'craft' }); else if (r.house) { net.send('houseList'); set({ panel: 'houses' }); } else if (r.city) toast(r.text ? r.text.slice(0, 140) : 'Ort betreten');
-      else if (r.gathered) toast('Gesammelt'); setSel(null); } finally { setBusy(false); }
+  async function interact(id: string, to?: string) {
+    setBusy(true);
+    try {
+      const r = await net.req('geoInteract', { id, to });
+      if (r.t === 'err') { toast(r.err || 'Interaktion fehlgeschlagen', 'err'); return; }
+      if (r.destinations) { setDestinations({ portal: id, rows: r.destinations }); return; }
+      if (r.teleported) { toast('Angekommen: ' + r.teleported); setDestinations(null); }
+      else if (r.station) set({ stationProf: r.station, panel: 'craft' });
+      else if (r.house) { net.send('houseList'); set({ panel: 'houses' }); }
+      else if (r.city) toast(r.text ? r.text.slice(0, 140) : 'Ort betreten');
+      else if (r.gathered) toast('Gesammelt');
+      setSel(null);
+    } finally { setBusy(false); }
   }
   const zoom = (d: number) => mapRef.current?.zoomTo(mapRef.current.getZoom() + d, { duration: 250 });
-  const toggleMode = () => { if (mode === 'gps') { setMode('virtual'); net.send('geoStop', {}); } else if (consent === 'gps') setMode('gps'); else choose('gps'); };
 
   const me = myPos();
   const o = sel ? objsRef.current.find(x => x.id === sel) : null; const dist = o && me ? haversine(me.lat, me.lon, o.lat, o.lon) : 0; const inRange = !!o && dist <= GEO.interactM + (o.r || 0);
   const rejected = info.flags.some(f => f === 'speed' || f === 'teleport');
-  const KIND: Record<string, string> = { mob: 'Monster', node: 'Ressource', dungeon: 'Dungeon', city: 'Stadt', house: 'Haus', npc: 'NPC', poi: 'Ort' };
+  const portal = o && destinations?.portal === o.id ? destinations : null;
+  const KIND: Record<string, string> = { teleporter: 'Teleportportal', mob: 'Monster', node: 'Ressource', dungeon: 'Dungeon', city: 'Stadt', house: 'Haus', npc: 'NPC', poi: 'Ort' };
 
   return (
     <div className="geo" style={hidden ? { display: 'none' } : undefined}>
@@ -253,7 +269,7 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
       <div className="map" ref={box} />
       <div className="top">
         <div className="status">
-          <div>{mode === 'gps' ? 'GPS' : 'Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h · {info.n} Objekte{walking ? ' · unterwegs' : ''}</div>
+          <div>{mode === 'gps' ? 'GPS' : 'Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h · {info.n} Objekte{walking ? ' · ' + (eta > 60 ? Math.ceil(eta / 60) + ' Min.' : eta + ' Sek.') : ''}</div>
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
           {!info.hasMe && consent !== null && <div>Warte auf Position…</div>}
@@ -271,11 +287,18 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
           <h3>{o.name}{o.lvl ? ` · Lv ${o.lvl}` : ''}</h3>
           <div className="dim">{KIND[o.k] || o.k}{o.fam ? ` · ${o.fam}` : ''}{o.role ? ` · ${o.role}` : ''}</div>
           <div style={{ marginTop: 6, color: inRange ? '#8affb0' : '#ffd27a' }}>{inRange ? 'In Reichweite' : `${Math.round(dist)} m entfernt`}</div>
+          {portal && inRange && (
+            <div className="portal-destinations">
+              {mode === 'gps' && <p>Zum Teleportieren in den virtuellen Modus wechseln.</p>}
+              {portal.rows.length === 0 && <p>Entdecke weitere Orte, um sie als Ziele freizuschalten.</p>}
+              {portal.rows.map(d => <button key={d.id} disabled={busy || mode === 'gps' || d.cost > gold} onClick={() => interact(o.id, d.id)}>{d.name} · {d.cost} Gold</button>)}
+            </div>
+          )}
           <div className="row">
-            {inRange ? <button className="on" disabled={busy} onClick={() => interact(o.id)}>Interagieren</button>
+            {inRange ? !portal && <button className="on" disabled={busy} onClick={() => interact(o.id)}>{o.k === 'teleporter' ? 'Ziele anzeigen' : 'Interagieren'}</button>
               : mode === 'virtual' ? <button className="on" onClick={() => walkTo(o.lat, o.lon)}>Hinlaufen</button>
               : <button disabled>Zu weit entfernt</button>}
-            <button onClick={() => setSel(null)}>Schließen</button>
+            <button onClick={() => { setSel(null); setDestinations(null); }}>Schließen</button>
           </div>
         </div>
       )}

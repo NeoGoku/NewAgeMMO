@@ -1,8 +1,8 @@
 // Integrationstest: startet den Server, spielt eine vertikale Kette (Registrierung → Charakter → Kampf → Loot → Persistenz → Reconnect) und prüft Sicherheitsregeln.
 import { spawn } from 'node:child_process'; import WebSocket from 'ws'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 const PORT = 8100 + Math.floor(Math.random() * 500); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nam-'));
-const srv = spawn('npx', ['tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir }, stdio: ['ignore', 'pipe', 'pipe'] }); let slog = ''; srv.stdout.on('data', d => slog += d); srv.stderr.on('data', d => slog += d);
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0; const ok = (c: any, msg: string) => { if (!c) { fail++; console.log('✗', msg); } else console.log('✓', msg); };
+const srv = spawn(process.execPath, ['--import', 'tsx', '--import', './tests/seed-random.mjs', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir }, stdio: ['ignore', 'pipe', 'pipe'] }); let slog = ''; srv.stdout.on('data', d => slog += d); srv.stderr.on('data', d => slog += d);
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0; const ok = (c: any, msg: string) => { if (!c) { fail++; console.log(process.env.GITHUB_ACTIONS ? '::error::' + msg : '✗ ' + msg); } else console.log('✓', msg); };
 class Cl { ws!: WebSocket; rid = 0; pend = new Map<number, (m: any) => void>(); last: any = {}; msgs: any[] = []; char: any; chats: any[] = [];
   async open() { for (let i = 0; i < 60; i++) { try { await new Promise<void>((res, rej) => { this.ws = new WebSocket(`ws://localhost:${PORT}`); this.ws.on('open', () => res()); this.ws.on('error', rej); }); break; } catch { await sleep(300); } }
     this.ws.on('message', d => { const m = JSON.parse(String(d)); if (m.rid && this.pend.has(m.rid)) { this.pend.get(m.rid)!(m); this.pend.delete(m.rid); } if (m.t === 'state') this.last = m; if (m.t === 'char') this.char = m.c; if (m.t === 'chat') this.chats.push(m); this.msgs.push(m.t); }); }
