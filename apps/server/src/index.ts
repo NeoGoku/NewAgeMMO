@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { NAME_RE, CLASS_IDS, BAL, derive, type Look, type ClassId } from '@nam/shared';
 import { validateData, LOCS, NPCS } from '@nam/game-data';
 import { makeStore } from './store'; import { G, now, send, sys, toLoc, uid, type Player, type Account } from './state';
-import { initWorld, worldTick, respawnAll } from './game'; import { newChar, recalc, summary, invAdd } from './chars';
+import { initWorld, worldTick, respawnAll, worldEvent } from './game'; import { newChar, recalc, summary, invAdd } from './chars';
 import { register, login, resume } from './auth'; import { H, NO_CHAR, claimCrafts } from './handlers';
 import { joinLoc } from './world'; import { leaveParty, cancelTrade, guildWarCheck } from './social'; import { offlinePets } from './pethouse'; import { marketExpire } from './market';
 import { dailyReset } from './quests'; import { leaveHouseSilent } from './world';
@@ -75,7 +75,7 @@ async function main() {
   }
   setInterval(() => { try { worldTick(); } catch (e: any) { log('tick_error', { e: String(e?.stack || e).slice(0, 400) }); } }, BAL.tickMs);
   setInterval(() => { for (const p of G.players.values()) if (p.online && p.dirty) { p.dirty = false; G.store.put('chars', p.c.id, p.c); } for (const p of G.players.values()) if (p.online && now() - p.lastAct > 20 * 60e3) p.ws.close(); for (const [id, pt] of G.parties) if (pt.members.length < 2) G.parties.delete(id); for (const t of G.players.values()) t.invites = t.invites.filter(i => i.until > now()); }, 15000);
-  setInterval(() => { marketExpire(); guildWarCheck(); }, 30000);
+  setInterval(() => { marketExpire(); guildWarCheck(); }, 30000); setInterval(() => { try { worldEvent(); } catch { /* */ } }, 25 * 60e3);
   setInterval(() => { G.store.flush(); }, 5000); setInterval(() => { G.store.backup().then(d => log('backup', { d })); }, 6 * 3600e3);
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { log('shutdown'); for (const p of [...G.players.values()]) await logout(p); await G.store.flush(); process.exit(0); });
   server.listen(PORT, () => log('listening', { port: PORT, locs: Object.keys(LOCS).length, npcs: Object.keys(NPCS).length }));

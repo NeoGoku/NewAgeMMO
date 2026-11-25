@@ -58,7 +58,7 @@ export function damagePlayer(t: Player, a: number, crit: boolean, src: Player | 
 function killPlayer(t: Player, src: Player | Mob | null) {
   const l = locOf(t); t.dead = true; t.deadUntil = now() + 5000; t.c.hp = 0; t.target = null; t.auto = false; t.autoFarm = null; t.gather = null; t.dx = t.x; t.dy = t.y; ev(l, { k: 'die', x: t.x, y: t.y, id: t.id });
   const pvpDeath = !!(src && 'c' in src) || !!LOCS[t.loc].pvp;
-  if (src && 'c' in src) { const k = src as Player; if (t.duel && t.duel.opp === k.id) { endDuel(k, t); return; } k.c.honor += 5; k.c.arenaPts += LOCS[t.loc].kind === 'arena' ? 3 : 1; sys(k, `Du hast ${t.c.name} besiegt! +5 Ehre.`); guildWarKill(k, t); }
+  if (src && 'c' in src) { const k = src as Player; if (t.duel && t.duel.opp === k.id) { endDuel(k, t); return; } k.c.honor += 5; for (const [h, ti] of [[100, 'Gladiator'], [500, 'Champion'], [2000, 'Legende der Arena']] as [number, string][]) if (k.c.honor >= h && !k.c.titles.includes(ti)) { k.c.titles.push(ti); sys(k, `Neuer Titel: ${ti}`, 'quest'); } k.c.arenaPts += LOCS[t.loc].kind === 'arena' ? 3 : 1; sys(k, `Du hast ${t.c.name} besiegt! +5 Ehre.`); guildWarKill(k, t); }
   if (!pvpDeath) { const loss = Math.min(t.c.exp, Math.floor(BAL.deathExpLoss * (t.c.level < BAL.maxLevel ? require_exp(t.c.level) : 0))); t.c.exp -= loss; for (const it of Object.values(t.c.equipment)) if (it?.dur !== undefined) it.dur = Math.max(0, it.dur - 8); sys(t, `Du bist gestorben und verlierst ${loss} EXP. Ausrüstung leicht beschädigt.`); }
   else sys(t, 'Du wurdest besiegt.'); send(t, { t: 'died', until: t.deadUntil });
 }
@@ -159,7 +159,7 @@ export function worldTick() {
     const active = l.players.size > 0;
     if (active) { for (const p of [...l.players]) playerTick(p, l, t, dt); for (const m of l.mobs) mobTick(m, l, t, dt); for (const n of l.nodes) if (!n.ready && t > n.respawnAt) { n.ready = true; n.hp = NODES[n.def].kind === 'crate' ? 3 : 1; } }
     else for (const m of l.mobs) if (m.dead) { if (t > m.respawnAt) revive(m); } else if (m.hp < m.maxHp) m.hp = m.maxHp;
-    l.mobs = l.mobs.filter(m => !(m.add && m.dead && t > m.respawnAt - 1000 * 1000 && t > m.lastHit + 4000));
+    l.mobs = l.mobs.filter(m => !((m.add || (m as any).event) && m.dead && t > m.lastHit + 4000));
     if (active) broadcast(l, t);
   }
   for (const p of G.players.values()) if (p.travel && t >= p.travel.until && p.online) { arrive(p); }
@@ -294,3 +294,11 @@ function autoFarm(p: Player, l: LocState, t: number) {
 export function usePotion(p: Player, id: string): boolean { const d = ITEMS[id]; if (!d?.use) return false; const it = p.c.inventory.find(i => i.id === id); if (!it) return false; it.qty--; if (it.qty <= 0) p.c.inventory.splice(p.c.inventory.indexOf(it), 1); if (d.use.hp) heal(p, d.use.hp); if (d.use.res) p.c.res = Math.min(p.st.maxRes, p.c.res + d.use.res); p.dirty = true; return true; }
 export function respawnAll() { for (const l of G.locs.values()) for (const m of l.mobs) if (m.dead) revive(m); }
 export { fxSum, addFx, fxHas, ev, locOf, inPvp };
+
+// ---------- Welt-Events ----------
+export function worldEvent() {
+  const cands = [...G.locs.values()].filter(l => !l.def.safe && !l.def.pvp && l.players.size > 0 && l.def.spawns.some(s => MOBS[s.mob].role === 'elite'));
+  if (!cands.length) return; const l = cands[rint(0, cands.length - 1)]; const sp = l.def.spawns.filter(s => MOBS[s.mob].role === 'elite'); const d = MOBS[sp[rint(0, sp.length - 1)].mob];
+  const m = spawnMob(l, d.id, false); m.def = { ...d, name: `⚡ ${d.name} (Event)`, exp: d.exp * 3, gold: [d.gold[0] * 3, d.gold[1] * 3], respawn: 1e9 } as MobDef; m.maxHp = m.hp = d.hp * 2; (m as any).event = true;
+  for (const p of G.players.values()) if (p.online) sys(p, `⚡ Welt-Event: ${d.name} ist in ${l.def.name} erschienen! Dreifache Belohnung.`, 'boss');
+}

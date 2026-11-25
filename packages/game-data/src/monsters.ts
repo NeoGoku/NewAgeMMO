@@ -20,8 +20,8 @@ function M(id: string, name: string, fam: Family, lvl: number, role: MobDef['rol
   drops.push({ id: '@egg', p: role === 'normal' ? .01 : role === 'elite' ? .06 : .25 });
   if (role === 'boss') drops.push({ id: 'reset_stone', p: .08 }, { id: `tome_${t}`, p: .6 });
   const kills = 12 + lvl * .3;
-  MOBS[id] = { id, name, fam, lvl, role, hp: Math.round(22 * Math.pow(lvl, 1.3) * r.hp + 20), atk: Math.round((5 + lvl * 1.6) * r.atk), def: Math.round(lvl * 1.3), exp: Math.max(3, Math.round(expToNext(lvl) / kills * r.exp)), gold: [Math.round((2 + lvl * 1.4) * r.gold), Math.round((5 + lvl * 2.4) * r.gold)],
-    art: { kind, color, scale: o.scale ?? (role === 'boss' ? 2.2 : role === 'elite' ? 1.35 : 1) }, skills: o.skills || (role === 'normal' ? [] : [{ k: 'heavy', every: 7, pow: 2 }]), phases: o.phases, res: o.res || {}, drops, respawn: role === 'boss' ? 300 : role === 'elite' ? 90 : 25, speed: 8, aggro: o.aggro ?? (fam === 'beast' || role !== 'normal' ? 30 : 18) };
+  MOBS[id] = { id, name, fam, lvl, role, hp: Math.round(22 * Math.pow(lvl, 1.3) * r.hp + 20), atk: Math.round((8 + lvl * 1.9) * r.atk), def: Math.round(lvl * 1.3), exp: Math.max(3, Math.round(expToNext(lvl) / kills * r.exp)), gold: [Math.round((2 + lvl * 1.4) * r.gold), Math.round((5 + lvl * 2.4) * r.gold)],
+    art: { kind, color, scale: o.scale ?? (role === 'boss' ? 2.2 : role === 'elite' ? 1.35 : 1) }, skills: o.skills || (role === 'normal' ? [] : [{ k: 'heavy', every: 7, pow: 2 }]), phases: o.phases, res: o.res || {}, drops, respawn: role === 'boss' ? 300 : role === 'elite' ? 90 : 25, speed: 8, aggro: o.aggro ?? (role !== 'normal' ? 30 : 15) };
 }
 const H = (k: MobSkill['k'], every: number, pow: number): MobSkill => ({ k, every, pow });
 M('rat','Mutierte Ratte','beast',1,'normal','rat','#8a7a6a'); M('stray','Tollwütiger Streuner','beast',2,'normal','wolf','#a09080'); M('pigeon','Mutationstaube','beast',3,'normal','bird','#7a8a9a'); M('boarlet','Parkkeiler','beast',4,'normal','boar','#8a5a3a');

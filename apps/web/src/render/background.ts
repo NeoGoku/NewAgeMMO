@@ -1,7 +1,7 @@
 import { Ctx, TAU, clamp, lerp, smooth, hash, mulberry, mix, shade, alpha, rgb, parse, mkCanvas, ctx2, glow, lg, poly, pr } from './util';
 
 type Rnd = () => number;
-interface Layers { far: HTMLCanvasElement; near: HTMLCanvasElement; lights: HTMLCanvasElement; stars: { x: number; y: number; r: number; p: number }[] }
+interface Layers { far: HTMLCanvasElement; near: HTMLCanvasElement; lights: HTMLCanvasElement; farD?: HTMLCanvasElement; nearD?: HTMLCanvasElement; stars: { x: number; y: number; r: number; p: number }[] }
 const cache = new Map<string, Layers>();
 
 const INDOOR: Record<string, [string, string]> = { dungeon: ['#07060c', '#241a2e'], crystal: ['#0a0720', '#2a1e5a'], void: ['#05010f', '#2a0a4a'] };
@@ -38,7 +38,7 @@ function mountains(c: Ctx, w: number, base: number, rnd: Rnd, amp: number, col: 
   const pts: number[] = [-10, base]; let y = base - amp * (.3 + rnd() * .5);
   for (let x = -10; x <= w + step; x += step) { y = clamp(y + (rnd() - .5) * amp * .9, base - amp, base - amp * .15); pts.push(x, y); }
   pts.push(w + step, base); poly(c, pts, lg(c, 0, base - amp, 0, base, 0, shade(col, .1), 1, col));
-  if (snow) for (let i = 2; i < pts.length - 2; i += 2) if (pts[i + 1] < base - amp * .65) poly(c, [pts[i] - 7, pts[i + 1] + 14, pts[i], pts[i + 1], pts[i] + 7, pts[i + 1] + 14], snow);
+  if (snow) for (let i = 4; i < pts.length - 4; i += 2) if (pts[i + 1] < base - amp * .55 && pts[i + 1] <= pts[i - 1] && pts[i + 1] <= pts[i + 3]) poly(c, [pts[i] - 7, pts[i + 1] + 14, pts[i], pts[i + 1], pts[i] + 7, pts[i + 1] + 14], snow);
 }
 function pine(c: Ctx, x: number, base: number, h: number, col: string) {
   c.fillStyle = shade(col, -.5); c.fillRect(x - 1.5, base - h * .15, 3, h * .15);
@@ -85,7 +85,19 @@ function ground(c: Ctx, w: number, h: number, y0: number, top: string, bot: stri
 }
 
 /* ---------- Szenen je Theme ---------- */
-function build(theme: string, w: number, h: number, seed: string): Layers {
+function build(theme: string, w: number, h: number, seed: string): Layers { return finish(build0(theme, w, h, seed), theme, w, h); }
+function finish(L: Layers, theme: string, w: number, h: number): Layers {
+  const hy = Math.round(h * .5), n = ctx2(L.near); let px = [40, 40, 44];
+  try { const d = n.getImageData(3, h - 3, 1, 1).data; px = [d[0], d[1], d[2]]; } catch { /* */ }
+  n.save(); n.globalCompositeOperation = 'destination-over'; n.fillStyle = lg(n, 0, hy, 0, h, 0, rgb(px[0] * .75, px[1] * .75, px[2] * .75), 1, rgb(px[0], px[1], px[2])); n.fillRect(0, hy - 2, w, h - hy + 2); n.restore();
+  if (!INDOOR[theme]) {
+    const dark = ['ruins', 'moor', 'crater', 'industrial'].includes(theme);
+    const mk = (src: HTMLCanvasElement, a: number, col: string) => { const c = mkCanvas(src.width, src.height), x = ctx2(c); x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-atop'; x.globalAlpha = a; x.fillStyle = col; x.fillRect(0, 0, c.width, c.height); return c; };
+    L.farD = mk(L.far, dark ? .3 : .55, '#b4cdf0'); L.nearD = mk(L.near, dark ? .1 : .28, '#ffeccc');
+  }
+  return L;
+}
+function build0(theme: string, w: number, h: number, seed: string): Layers {
   const rnd = mulberry(hash(theme + '|' + seed));
   const far = mkCanvas(w + 60, h), near = mkCanvas(w, h), lights = mkCanvas(w, h);
   const f = ctx2(far), n = ctx2(near), L = ctx2(lights), FL = L; // far windows share lights (offset fixed -30)
@@ -145,7 +157,7 @@ function build(theme: string, w: number, h: number, seed: string): Layers {
     for (let x = 100; x < w; x += 220) poly(n, [x, hy - 20, x + 24, hy - 20, x + 24, hy + 10, x + 12, hy + 4, x, hy + 10], '#8a2a2a');
     gt = ['#a08860', '#5a4a30', 'rgba(60,40,20,.25)', 'rgba(60,40,20,.3)'];
   } else if (T === 'park') {
-    city(hy - 4, '#1e2a40', h * .08, h * .2, false, .3, 40, 70);
+    city(hy - 4, '#1e2a40', h * .08, h * .2, false, .02, 40, 70);
     for (let x = 0; x < w + 60; x += 22 + rnd() * 24) roundTree(f, x, hy + 6, 50 + rnd() * 40, '#1f4a35', '#2a2018');
     L.restore(); L.save();
     for (let x = 0; x < w; x += 60 + rnd() * 70) roundTree(n, x, hy + 26 + rnd() * 20, 90 + rnd() * 50, rnd() < .3 ? '#6aa84a' : '#3a8a4a', '#4a3322');
@@ -278,11 +290,11 @@ export function drawBackground(ctx: Ctx, w: number, h: number, theme: string, da
   }
   // Fern-Ebene (leichte Parallax)
   const px = Math.sin(t / 9000) * 8 - 30;
-  ctx.drawImage(Ly.far, px, 0);
+  ctx.drawImage(Ly.far, px, 0); if (Ly.farD && day > .01) { ctx.globalAlpha = day; ctx.drawImage(Ly.farD, px, 0); ctx.globalAlpha = 1; }
   if (theme === 'harbor') { // animiertes Wasser
     ctx.fillStyle = 'rgba(120,190,255,.25)'; for (let i = 0; i < 40; i++) { const x = (i * 97 + t / 40 * (1 + i % 3 * .3)) % (w + 40) - 20, y = hy - 22 + (i * 37 % 26); ctx.fillRect(x, y, 14 + i % 5 * 4, 1.5); }
   }
-  ctx.drawImage(Ly.near, 0, 0);
+  ctx.drawImage(Ly.near, 0, 0); if (Ly.nearD && day > .01) { ctx.globalAlpha = day; ctx.drawImage(Ly.nearD, 0, 0); ctx.globalAlpha = 1; }
   // Tageslicht-Overlay
   if (!indoor) {
     const nightA = night * .42 * (theme === 'sky' ? .6 : 1), dusk = smooth(.5, 0, Math.abs(sunH)) * (1 - night * .5);

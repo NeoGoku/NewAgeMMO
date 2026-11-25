@@ -49,7 +49,7 @@ N('kluft_waechter','Kluftwächter Hob','Dämonenkluft','daemonenkluft','human','
 N('krater_ing','Kraterforscher Dr. Okoye','Forscher','neonkrater','robot','#4ad0ff','Der Krater strahlt Energie ab.',['heal'],{});
 // ---- Locations ----
 L({ id: 'aurelia_plaza', name: 'Aurelia – Zentralplatz', kind: 'city', theme: 'city', lvl: [1, 100], safe: true, pvp: false, desc: 'Das pulsierende Herz der Hauptstadt – Magie und Technik Seite an Seite.', map: [50, 50], tele: 0,
-  links: [{ to: 'aurelia_market', x: 8, y: 78, sec: 3, label: 'Marktviertel' }, { to: 'kessel', x: 92, y: 78, sec: 3, label: 'Kessel' }, { to: 'lindenhain', x: 50, y: 92, sec: 3, label: 'Lindenhain' }, { to: 'stadtpark', x: 30, y: 92, sec: 4, label: 'Stadtpark' }, { to: 'arena', x: 70, y: 92, sec: 3, label: 'Colosseum' }],
+  links: [{ to: 'aurelia_market', x: 8, y: 78, sec: 3, label: 'Marktviertel' }, { to: 'kessel', x: 92, y: 78, sec: 3, label: 'Kessel' }, { to: 'lindenhain', x: 50, y: 84, sec: 3, label: 'Lindenhain' }, { to: 'stadtpark', x: 30, y: 84, sec: 4, label: 'Stadtpark' }, { to: 'arena', x: 70, y: 84, sec: 3, label: 'Colosseum' }],
   hotspots: [npcHs('mira', 50, 70), npcHs('torben', 22, 62), npcHs('lena', 36, 58), npcHs('orwin', 62, 60, 'board'), npcHs('vex', 78, 62, 'portal'), npcHs('bankier', 14, 72, 'bank'), npcHs('gildmeister', 88, 62, 'guildhall'), { id: 'hs_fountain', kind: 'decor', x: 50, y: 52, label: 'Brunnen', art: 'fountain' }] });
 L({ id: 'aurelia_market', name: 'Aurelia – Marktviertel', kind: 'district', theme: 'market', lvl: [1, 100], safe: true, pvp: false, desc: 'Händler, Stände und das große Auktionshaus.', map: [30, 52], tele: 0,
   links: [{ to: 'aurelia_plaza', x: 92, y: 78, sec: 3, label: 'Zentralplatz' }],
@@ -79,7 +79,7 @@ L({ id: 'schrottfeld', name: 'Schrottfeld', kind: 'wild', theme: 'junkyard', lvl
   hotspots: [npcHs('techniker', 22, 66)], spawns: [{ mob: 'junk_drone', n: 5 }, { mob: 'welder', n: 4 }, { mob: 'sentry', n: 3 }, { mob: 'scrap_mech', n: 1 }],
   nodes: [{ def: 'n_ore_1', n: 4 }, { def: 'n_ore_2', n: 2 }, { def: 'n_crate_1', n: 4 }], weather: ['clear','rain','fog'] });
 L({ id: 'port_nocturne', name: 'Port Nocturne', kind: 'city', theme: 'harbor', lvl: [20, 100], safe: true, pvp: false, desc: 'Zweite Metropole: ein nächtlicher Hafen voller Schmuggler, Händler und Lichter.', map: [10, 22], tele: 300,
-  links: [{ to: 'eisenzahn', x: 8, y: 80, sec: 12, label: 'Eisenzahn' }, { to: 'valdris', x: 92, y: 80, sec: 10, label: 'Valdris' }, { to: 'schattenmoor', x: 50, y: 92, sec: 12, label: 'Schattenmoor' }],
+  links: [{ to: 'eisenzahn', x: 8, y: 80, sec: 12, label: 'Eisenzahn' }, { to: 'valdris', x: 92, y: 80, sec: 10, label: 'Valdris' }, { to: 'schattenmoor', x: 50, y: 84, sec: 12, label: 'Schattenmoor' }],
   hotspots: [npcHs('hafenmeister', 30, 62), npcHs('syndikat_boss', 66, 66)], weather: ['clear','fog','rain','storm'] });
 L({ id: 'valdris', name: 'Ruinen von Valdris', kind: 'wild', theme: 'ruins', lvl: [22, 32], safe: false, pvp: false, desc: 'Eine versunkene Tempelstadt, in der Dämonen hausen.', map: [10, 8],
   links: [{ to: 'port_nocturne', x: 8, y: 80, sec: 10, label: 'Port Nocturne' }, { to: 'daemonenkluft', x: 92, y: 70, sec: 8, label: 'Dämonenkluft' }],

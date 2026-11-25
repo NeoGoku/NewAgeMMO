@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: nam, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-change-me-locally}", POSTGRES_DB: nam }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U nam"], interval: 5s, retries: 10 }
+  server:
+    build: { context: .., dockerfile: infrastructure/Dockerfile }
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: "postgres://nam:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/nam"
+      ADMIN_USERS: "${ADMIN_USERS:-}"
+    ports: ["8080:8080"]
+    restart: unless-stopped
+volumes: { pgdata: {} }

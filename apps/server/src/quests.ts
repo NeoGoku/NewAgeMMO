@@ -1,4 +1,4 @@
-import { QUESTS, ITEMS, MOBS, LOCS, type QuestDef } from '@nam/game-data';
+import { QUESTS, ITEMS, MOBS, LOCS, NPCS, type QuestDef } from '@nam/game-data';
 import { expToNext, type Rarity } from '@nam/shared';
 import { send, sys, now, type Player } from './state';
 import { invAdd, invCount, invRemove, gainExp, addTrainExp, recalc } from './chars';
@@ -16,7 +16,7 @@ export function questEvent(p: Player, kind: 'kill' | 'item' | 'craft' | 'gather'
       if (g.k === 'collect' && (kind === 'item' || kind === 'gather') ) { const c = Math.min(g.n, invCount(p.c, g.t)); if (c !== qs.prog[i]) { qs.prog[i] = c; changed = true; } }
       if (inc && qs.prog[i] < g.n) { qs.prog[i] = Math.min(g.n, qs.prog[i] + inc); changed = true; }
     });
-    if (q.goals.every((g, i) => qs.prog[i] >= g.n) && qs.state === 'active') { qs.state = 'done'; sys(p, `Quest abgeschlossen: ${q.name} – melde dich bei ${q.turnin}.`, 'quest'); send(p, { t: 'questDone', id }); }
+    if (q.goals.every((g, i) => qs.prog[i] >= g.n) && qs.state === 'active') { qs.state = 'done'; sys(p, `Quest abgeschlossen: ${q.name} – melde dich bei ${q.turnin}.`, 'quest'); send(p, { t: 'questDone', id }); if (p.c.settings.autoQuest && !q.choice && NPCS[q.turnin]?.loc === p.loc) setTimeout(() => { if (p.c.quests[id]?.state === 'done') { const e = turnIn(p, id); if (!e) send(p, { t: 'char', c: p.c }); } }, 600); }
   }
   if (changed) { p.dirty = true; send(p, { t: 'quests', q: p.c.quests, done: p.c.questsDone }); }
 }
