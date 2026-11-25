@@ -25,7 +25,20 @@ Die Online-Servervariable `ADMIN_USERS` enthält die Benutzernamen bereits siche
 
 ## Straßenrouting und Immobilienkatalog
 
-**Routing.** Valhalla bietet Profile für Fußverkehr, Fahrräder, Motorräder und Autos samt Wegeverlauf. OSRM verwendet üblicherweise ein vorverarbeitetes Netz je Profil. GraphHopper hätte eine zusätzliche JVM-Installation erfordert. Ein selbst betriebener Valhalla-Dienst kann OSM-Auszüge für die gewünschten Regionen nutzen. Die Basis-URL ohne `/route` als `VALHALLA_URL` auf dem Online-Server setzen. Für Browser und Android im Solo-Modus dieselbe Basis per `NAM_VALHALLA_URL` in GitHub Actions oder lokal per `VITE_VALHALLA_URL` zur Buildzeit angeben. Öffentliches HTTPS und passende CORS-Regeln für den jeweiligen Ursprung sind dort nötig. Keine Anmeldedaten in den Browser-Build setzen. Der Browser ruft den eingestellten Dienst für Start- und Zielkoordinaten an. Ein öffentlicher Demo-Server ist nicht voreingestellt.
+**Routing.** Valhalla verwendet denselben OSM-Straßengraphen für Fußverkehr, Fahrräder, Motorräder und Autos. Das optionale Compose-Paket startet das offizielle Valhalla-Image und baut den Graphen aus dem [OSM-Auszug für Niedersachsen von Geofabrik](https://download.geofabrik.de/europe/germany/niedersachsen.html). Der erste Aufbau benötigt je nach Auszug freien Speicher und Zeit. Der Dienst bleibt im Compose-Netz erreichbar. Die weitergeleitete Debug-Schnittstelle ist an die Loopback-Adresse gebunden.
+
+```sh
+export COMPOSE_FILE=infrastructure/docker-compose.yml:infrastructure/docker-compose.routing.yml
+docker compose up -d
+docker compose logs valhalla
+curl -fsS http://127.0.0.1:8002/status
+```
+
+Der Spielserver im Compose-Verbund verwendet `http://valhalla:8002` automatisch. `VALHALLA_TILE_URLS` wählt einen anderen OSM-Auszug. Setze es auf einen leeren Wert und verwende `VALHALLA_DATA_DIR` mit absolutem Pfad, um eine vorbereitete lokale `.osm.pbf`-Datei einzubinden. Valhalla speichert PBF und Graph standardmäßig im Volume `valhalla_data`. Für einen neuen Datenstand ein separates Datenverzeichnis vorbereiten, mit `/status` und einer Route prüfen und dann umschalten. Die Quelldaten stammen von [OpenStreetMap-Mitwirkenden unter ODbL](https://www.openstreetmap.org/copyright). Der Workflow **Valhalla mit echten OSM-Daten** prüft Fuß- und Autorouten in Braunschweig mit einem zugeschnittenen Geofabrik-Auszug.
+
+Für einen separaten Online-Spielserver die Basis-URL ohne `/route` als `VALHALLA_URL` setzen. GitHub Pages ist statisch. Für Browser und Android im Solo-Modus einen öffentlich erreichbaren HTTPS-Reverse-Proxy vor Valhalla betreiben und die Basis per `NAM_VALHALLA_URL` in GitHub Actions oder lokal per `VITE_VALHALLA_URL` setzen. Der Proxy sollte nur `POST /route` und den `OPTIONS`-Preflight freigeben, Anfragen begrenzen und `Content-Type` für die erlaubten Origins zulassen. Der aktuelle Android-Build verwendet `http://localhost` als Origin. Start- und Zielkoordinaten gehen an den konfigurierten Dienst. Zugangsdaten gehören in die Server-Konfiguration.
+
+Selbsthosting auf einem vorhandenen Rechner verursacht keine API-Gebühren. Ein kostenloser VM-Tarif kommt bei genügend dauerhaftem Speicher und tatsächlich verfügbarem Kontingent ebenfalls infrage. Der kostenlose Render-Webdienst dient als Spielserver. Der Graphaufbau und das persistente Routing-Volume benötigen einen eigenen Host. Für den öffentlichen Betrieb müssen dessen Betreiberzugang und HTTPS-Endpunkt bereitstehen. Ohne Routendienst bleibt für kurze Fußstrecken die ausdrücklich als Luftlinie gekennzeichnete virtuelle Bewegung verfügbar.
 
 **Katalog.** Der Online-Server liest aus `PROPERTY_CATALOG_GEOJSON` eine bereitgestellte, lizenzkonforme OSM-GeoJSON-Datei für Braunschweig (inklusive Innenstadt, Heidberg und Weststadt). Für Solo eine gleichursprüngliche Datei veröffentlichen und deren Pfad in `NAM_PROPERTY_CATALOG_URL` beziehungsweise `VITE_PROPERTY_CATALOG_URL` setzen. Quellen und Datenstand mitliefern. Ohne Datei bleibt das bestehende Housing nutzbar. Im öffentlichen Build ist kein echter Immobilienbestand hinterlegt. Die verfügbaren Felder und Modellgrenzen stehen im Implementierungsstatus.
 

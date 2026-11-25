@@ -1,0 +1,40 @@
+name: Valhalla mit echten OSM-Daten
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['infrastructure/docker-compose.yml', 'infrastructure/docker-compose.routing.yml', '.github/workflows/routing-smoke.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  braunschweig:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      COMPOSE_FILE: infrastructure/docker-compose.yml:infrastructure/docker-compose.routing.yml
+      VALHALLA_TILE_URLS: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Straßendaten rund um Braunschweig zuschneiden
+        run: |
+          sudo apt-get install -y osmium-tool
+          curl --fail --silent --show-error --location --retry 2 --max-time 240 \
+            https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf \
+            --output "$RUNNER_TEMP/niedersachsen.osm.pbf"
+          mkdir "$RUNNER_TEMP/routing"
+          osmium extract --bbox 10.45,52.21,10.62,52.34 --strategy complete_ways \
+            --output "$RUNNER_TEMP/routing/braunschweig.osm.pbf" "$RUNNER_TEMP/niedersachsen.osm.pbf"
+          echo "VALHALLA_DATA_DIR=$RUNNER_TEMP/routing" >> "$GITHUB_ENV"
+      - name: Graph bauen und Fuß- sowie Autoroute prüfen
+        run: |
+          docker compose up -d --wait --wait-timeout 360 valhalla
+          for profile in pedestrian auto; do
+            curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8002/route \
+              --json "{\"locations\":[{\"lat\":52.26954,\"lon\":10.52735},{\"lat\":52.26028,\"lon\":10.53768}],\"costing\":\"$profile\",\"shape_format\":\"polyline6\"}" |
+              jq -e '.trip.status == 0 and .trip.summary.length > 0.5 and .trip.summary.time > 0 and (.trip.legs[0].shape | length > 16)'
+          done
+      - name: Valhalla-Protokoll bei Fehler
+        if: failure()
+        run: docker compose logs valhalla

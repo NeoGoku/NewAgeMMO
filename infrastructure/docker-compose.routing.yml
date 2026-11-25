@@ -1,0 +1,29 @@
+services:
+  server:
+    environment:
+      VALHALLA_URL: http://valhalla:8002
+    depends_on:
+      valhalla: { condition: service_started }
+
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.3@sha256:d438516425e785442562852d2f38d048478b6895bb15850491b81332f85bc4be
+    environment:
+      tile_urls: "${VALHALLA_TILE_URLS-https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf}"
+      server_threads: "${VALHALLA_THREADS:-2}"
+      # Reuse the local PBF and routing graph on ordinary server restarts.
+      use_tiles_ignore_pbf: "True"
+      use_default_speeds_config: "False"
+    volumes:
+      - "${VALHALLA_DATA_DIR:-valhalla_data}:/custom_files"
+    ports:
+      - "127.0.0.1:${VALHALLA_LOCAL_PORT:-8002}:8002"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, '3', 'http://127.0.0.1:8002/status']
+      interval: 10s
+      timeout: 4s
+      retries: 3
+      start_period: 20m
+    restart: unless-stopped
+
+volumes:
+  valhalla_data: {}
