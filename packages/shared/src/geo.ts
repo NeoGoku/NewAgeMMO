@@ -9,7 +9,7 @@ export const GEO = {
   spawnBucketMs: 20 * 60e3, // Spawns rotieren alle 20 Minuten
   minPosIntervalMs: 900,
 };
-export type GeoKind = 'mob' | 'node' | 'dungeon' | 'city' | 'house' | 'npc' | 'poi';
+export type GeoKind = 'mob' | 'node' | 'dungeon' | 'city' | 'house' | 'npc' | 'station' | 'poi';
 export interface GeoObj { id: string; k: GeoKind; def: string; lat: number; lon: number; name: string; lvl?: number; fam?: string; role?: string; r?: number; extra?: any }
 export interface GeoPlayer { id: string; name: string; cls: string; lvl: number; lat: number; lon: number }
 /** Server→Client `geo`: { t:'geo', me:{lat,lon,mode,speed,flags:string[]}, objs:GeoObj[], players:GeoPlayer[], rev:number } ; Client→Server: geoConsent{on}, geoPos{lat,lon,acc,mode,t}, geoWalk{lat,lon}, geoStop{}, geoInteract{id}, geoWipe{} (Daten löschen) */

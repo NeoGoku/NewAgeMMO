@@ -1,4 +1,6 @@
 import { BAL, ATTRS, CLASS_BASE, RARITY_MULT, bonusPointCost, type Attr, type Rarity, type Slot, type ItemInst } from '@nam/shared';
+import { placeNear } from '@nam/game-data';
+import { haversine } from '@nam/shared';
 import { ITEMS, LOCS, NPCS, QUESTS, RECIPES, PROFS, SKILLS, CLASSES, SPECIES, MOBS, NODES } from '@nam/game-data';
 import { G, now, uid, send, sys, dist, clamp, type Player } from './state';
 import { invAdd, invRemove, invCount, takeUid, giveInst, recalc, isEquip, mkItem, repairCost, repairAll, rollRarity, gainExp, trainCost, addTrainExp, summary, eqView } from './chars';
@@ -45,7 +47,7 @@ H.sortInv = (p) => { p.c.inventory.sort((a, b) => ITEMS[a.id].type.localeCompare
 H.stashPut = (p, m) => { const it = takeUid(p.c.inventory, S(m.uid), N(m.qty, 1, 9999, 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it, p.c.stash, BAL.stashSize)) { giveInst(p.c, it); return 'Lager voll'; } p.dirty = true; };
 H.stashTake = (p, m) => { const it = takeUid(p.c.stash, S(m.uid), N(m.qty, 1, 9999, 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it)) { giveInst(p.c, it, p.c.stash, 999); return 'Inventar voll'; } p.dirty = true; };
 // ---- NPC / Shops ----
-const npcHere = (p: Player, id: string) => { const n = NPCS[id]; return n && n.loc === p.loc ? n : null; };
+const npcHere = (p: Player, id: string) => { const n = NPCS[id]; if (!n) return null; if (n.loc === p.loc) return n; const g = p.geo; if (g?.on && g.has) { const [la, lo] = placeNear(n.loc, 'npc:' + n.id); if (haversine(g.lat, g.lon, la, lo) <= 260) return n; } return null; };
 function shopList(p: Player, id: string) {
   const n = NPCS[id]; if (!n?.shop) return []; const out: { id: string; price: number }[] = [];
   for (const d of Object.values(ITEMS)) { if (!n.shop.types.includes(d.type) || !n.shop.tiers.includes(d.tier)) continue; if (d.type === 'weapon' && d.cls !== p.c.cls) continue; if (d.id.startsWith('tome_') || d.id.startsWith('elx_') && d.tier > 3 && false) continue; if (d.type === 'mount') continue; out.push({ id: d.id, price: d.price }); }

@@ -8,7 +8,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   const req = (t: string, o: any = {}): Promise<any> => new Promise(r => { const id = ++rid; pend.set(id, r); ws.send(JSON.stringify({ t, rid: id, ...o })); setTimeout(() => r({ t: 'err', err: 'timeout' }), 4000); });
   await req('register', { user: 'geo1', pass: 'secret12' }); const c = await req('createChar', { name: 'Geoer', cls: 'archer', look: { gender: 'm', face: 1, body: 1, hair: 2, hairColor: '#aa3311', tattoo: 0, skin: '#e0b090' } }); await req('enter', { id: c.id }); await sleep(500);
   let r = await req('geoPos', { lat: 52.52, lon: 13.4, acc: 10, mode: 'gps' }); ok(r.t === 'err', 'GPS ohne Einwilligung abgelehnt');
-  await req('geoConsent', { on: true }); await sleep(800); ok(geo && Array.isArray(geo.objs), 'Geo-Paket nach Einwilligung'); 
+  await req('geoConsent', { on: true, gps: true }); await sleep(800); ok(geo && Array.isArray(geo.objs), 'Geo-Paket nach Einwilligung'); 
   r = await req('geoPos', { lat: 52.52, lon: 13.405, acc: 10, mode: 'gps' }); ok(r.t === 'ok', 'GPS-Position akzeptiert'); await sleep(1200);
   r = await req('geoPos', { lat: 52.9, lon: 13.9, acc: 10, mode: 'gps' }); ok(r.t === 'err', 'Teleport abgelehnt (Manipulationsschutz)');
   await req('geoPos', { lat: 52.5219, lon: 13.4132, acc: 10, mode: 'gps' }); await sleep(2300); console.log('objs', geo.objs.length, geo.objs.map((o: any) => o.k).join(','));

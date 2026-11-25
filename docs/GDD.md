@@ -1,4 +1,13 @@
-# Game Design Document (Kurzfassung)
+# Game Design Document
+
+## 0. Kernprinzip: Map-First (verbindlich)
+- Die reale Erde ist die Spielwelt. Die **Weltkarte (MapLibre + OpenStreetMap)** ist permanent die Hauptansicht; die frühere Stadtansicht ist entfernt.
+- Der eigene Charakter steht auf der Karte; Zoom, Drehung und Verschieben sind möglich. Dunkler, futuristischer Urban-Fantasy-Stil (Ingress-Prime-artig), Straßen/Gebäude/Parks/Gewässer bleiben erkennbar.
+- Auf der Karte platziert: Monster und Weltbosse, NPCs und Questgeber, Händler und Banken, Sammelressourcen, Dungeoneingänge, Werkstätten, Spielerwohnungen, Gildenhäuser, Teleporter, eroberbare Gebiete (geplant), andere Spieler (datenschutzkonform gerundet).
+- Antippen eines Objekts öffnet die Interaktion. Kämpfe, Dungeons, Handel, Crafting und Housing nutzen eigene Ansichten; danach Rückkehr zur Karte.
+- Bewegung: GPS-Modus (wie Pokémon GO) oder virtuell durch Antippen eines Ziels; beide gleichwertig; animierte Route; Reisegeschwindigkeit durch Reittiere.
+- Smartphone-Oberfläche: Karte bildschirmfüllend, kompakte Charakteranzeige oben, Ereignisleiste unten mit fünf Bereichen (Karte, Helden, Inventar, Quests, Mehr), Kampfskills nur im Kampf, Chat standardmäßig eingeklappt, keine überlappenden Bedienelemente.
+
 **Setting:** Aurelia, alternatives 2030 – Magie ist seit einem Jahrzehnt öffentlich, Technik und Zauberei koexistieren. Drei Städte (Aurelia, Port Nocturne, Kristallspitze), Wildnis, Ruinen, Dungeons, Bossregionen, Arena. Fraktionen: Magierrat, Schattensyndikat, Technikerunion. Hauptgeschichte „Das Erwachen der Leere“ (12 Kapitel) bis zum Void-Herz.
 **Kern:** Point-and-Click-Echtzeitkampf (Ziel antippen → Auto-Angriff + manuelle Skills mit Cooldown/Ressource), grafische Szenen statt Textmenüs, ein gemeinsamer Server ohne Channels, alle Plattformen identisch.
 **Klassen (8):** Dunkler Magier, Heller Magier, Bogenschütze, Schildschwert, Doppelschwert, Heiler, Kreaturen-Beschwörer, Tank – je 10 aktive Skills, 4 Passive, eigene Ressource (Mana/Fokus/Ausdauer/Energie/Seelenkraft/Wut).

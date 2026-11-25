@@ -6,3 +6,10 @@ export const GEO_ANCHORS: Record<string, [number, number, number]> = {
   schattenmoor: [53.2500, 8.9500, 3000], himmelsturm: [47.4210, 10.9850, 800], voidherz: [27.9881, 86.9250, 3000],
 };
 export const GEO_START: [number, number] = [52.5200, 13.4050];
+const h32 = (s: string) => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; };
+/** Deterministische Kartenposition (lat, lon) für Objekte einer Stadt/Zone (NPCs, Werkstätten). */
+export function placeNear(loc: string, key: string): [number, number] {
+  const a = GEO_ANCHORS[loc] || GEO_ANCHORS.aurelia_plaza; const h = h32(key);
+  const ang = ((h % 3600) / 3600) * 2 * Math.PI; const span = Math.max(60, Math.min(260, a[2] * 0.5)); const d = 70 + (((h >>> 12) % 1000) / 1000) * span;
+  return [a[0] + (d * Math.cos(ang)) / 111320, a[1] + (d * Math.sin(ang)) / (111320 * Math.cos((a[0] * Math.PI) / 180))];
+}

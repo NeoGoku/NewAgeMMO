@@ -3,6 +3,7 @@ import type { Character, StateMsg } from '@nam/shared';
 export interface Toast { id: number; text: string; kind: string }
 export interface Settings { master: number; music: number; sfx: number; showDmg: boolean; uiScale: number; quality: 'low' | 'high'; server: string; shake: boolean }
 export interface S {
+  inScene: boolean; geoMode: string; geoWalking: boolean; navPanel: string; hudChat: boolean;
   screen: 'title' | 'auth' | 'chars' | 'create' | 'options' | 'game' | 'bye'; authMode: 'login' | 'register'; user: string; token: string; chars: any[]; createSlot: number; char: Character | null; loc: string; snap: StateMsg | null;
   chat: { ch: string; from: string; text: string; at: number; to?: string; cls?: string }[]; dialog: any; panel: string | null; toasts: Toast[]; invites: any[]; party: any; guild: any; guildList: any[]; friends: any[]; market: any; houses: any; house: any; visitors: any[]; trade: any; profile: any;
   settings: Settings; conn: 'ok' | 'lost' | 'connecting'; travel: { to: string; ms: number; start: number; from: string } | null; died: { until: number } | null; autoFarm: number; target: any; admin: boolean; selected: any; stationProf: string | null; tracked: string | null; menuOpen: boolean; combatLog: string[]; levelUp: number; fps: number;
@@ -10,6 +11,7 @@ export interface S {
 const load = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v ? { ...d, ...JSON.parse(v) } : d; } catch { return d; } };
 import { defaultServer } from './net';
 export const state: S = {
+  inScene: false, geoMode: 'virtual', geoWalking: false, navPanel: '', hudChat: false,
   screen: 'title', authMode: 'login', user: '', token: (() => { try { return localStorage.getItem('nam.token') || ''; } catch { return ''; } })(), chars: [], createSlot: 0, char: null, loc: 'aurelia_plaza', snap: null, chat: [], dialog: null, panel: null, toasts: [], invites: [], party: null, guild: null, guildList: [], friends: [], market: null, houses: null, house: null, visitors: [], trade: null, profile: null,
   settings: load<Settings>('nam.settings', { master: .8, music: .5, sfx: .8, showDmg: true, uiScale: 1, quality: 'high', server: defaultServer(), shake: true }), conn: 'ok', travel: null, died: null, autoFarm: 0, target: null, admin: false, selected: null, stationProf: null, tracked: null, menuOpen: true, combatLog: [], levelUp: 0, fps: 60,
 };

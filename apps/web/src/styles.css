@@ -44,3 +44,34 @@ input[type=range]{width:100%;accent-color:var(--cy)}
 .cc{display:grid;grid-template-columns:minmax(200px,1fr) minmax(240px,1.2fr) minmax(200px,1fr);gap:12px;height:100%}@media (max-width:820px){.cc{grid-template-columns:1fr}}
 .swatch{width:30px;height:30px;border-radius:50%;border:2px solid #fff4;cursor:pointer}.swatch.on{border-color:var(--cy);box-shadow:0 0 10px var(--cy)}
 .furn{cursor:pointer}.bubble{position:absolute;pointer-events:none}.hint{position:absolute;bottom:calc(86px + var(--sab));left:50%;transform:translateX(-50%);background:#000a;border-radius:99px;padding:4px 14px;font-size:12px;color:var(--dim)}
+/* ---- Karte als Hauptansicht: HUD, Ereignisleiste, Skillleiste ---- */
+:root{--navh:64px}
+.hudc{position:absolute;left:calc(8px + var(--sal));top:calc(8px + var(--sat));z-index:8;display:flex;gap:8px;align-items:center;background:#04101ce6;border:1px solid #1ee8ff55;border-radius:14px;padding:6px 10px 6px 6px;width:min(300px,calc(100vw - 16px));box-shadow:0 0 18px #1ee8ff22;pointer-events:auto}
+.hudc img{width:44px;height:44px;border-radius:10px;border:1px solid #5ef2ff;background:#071425;flex:none}
+.hudc .bars{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.hudc .thin{height:6px;background:#0008;border-radius:4px;overflow:hidden}.hudc .thin>i{display:block;height:100%}
+.hudc .nm{display:flex;gap:6px;align-items:center;font-weight:700;font-size:13px;color:#eaffff;white-space:nowrap;overflow:hidden}
+.hudc .nm span{overflow:hidden;text-overflow:ellipsis}
+.hudc .sub{font-size:11px;color:#7fa3b8;display:flex;gap:8px;justify-content:space-between}
+.hudc .lvl{background:#1ee8ff22;border:1px solid #1ee8ff66;border-radius:8px;padding:0 6px;font-size:11px;color:#8ff4ff;flex:none}
+.hudbtn{position:absolute;right:calc(8px + var(--sar));top:calc(8px + var(--sat));z-index:8;background:#04101ce6;border:1px solid #1ee8ff66;border-radius:12px;color:#cdeeff;min-height:40px;padding:0 12px;font:inherit;pointer-events:auto}
+.pills{position:absolute;left:calc(8px + var(--sal));right:calc(8px + var(--sar));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:8px;align-items:center;justify-content:space-between;pointer-events:none}
+.pills>*{pointer-events:auto}
+.pill-btn{background:#04101ce6;border:1px solid #1ee8ff66;border-radius:99px;color:#cdeeff;min-height:38px;padding:0 14px;font:inherit;font-size:13px}
+.pill-btn.warn{border-color:#ff6b7a;color:#ffb3bb}
+.chatpill{position:absolute;left:calc(8px + var(--sal));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;width:min(340px,70vw);pointer-events:auto}
+.chatpill .chatlog{max-height:140px}
+.skillbar{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:6px;align-items:flex-end;background:#04101ce6;border:1px solid #1ee8ff55;border-radius:16px;padding:6px;pointer-events:auto;max-width:calc(100vw - 16px)}
+.skillbar .slot{width:46px;height:46px;border-radius:12px}
+.skillbar .slot img{width:38px;height:38px}
+.navbar{position:absolute;left:0;right:0;bottom:0;height:calc(var(--navh) + var(--sab));padding-bottom:var(--sab);z-index:10;display:grid;grid-template-columns:repeat(5,1fr);background:linear-gradient(#04101cf5,#020710fa);border-top:1px solid #1ee8ff55;box-shadow:0 -6px 24px #000b;pointer-events:auto}
+.navbar button{background:none;border:0;color:#7fa3b8;font:inherit;font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:var(--navh)}
+.navbar button svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8}
+.navbar button.on{color:#5ef2ff;text-shadow:0 0 8px #5ef2ff}
+.morepanel{position:absolute;left:8px;right:8px;bottom:calc(var(--navh) + 8px + var(--sab));z-index:11;background:#04101cf5;border:1px solid #1ee8ff66;border-radius:16px;padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;pointer-events:auto;box-shadow:0 10px 40px #000c}
+.morepanel button{background:#06182a;border:1px solid #1ee8ff44;border-radius:12px;color:#cdeeff;min-height:52px;font:inherit;font-size:13px}
+.scenebar{position:absolute;left:8px;right:8px;top:calc(8px + var(--sat));z-index:8;display:flex;gap:8px;justify-content:space-between;pointer-events:none}
+.scenebar>*{pointer-events:auto}
+
+.geo .map{overflow:hidden}
+.geo .map::after{content:'';position:absolute;inset:0;background:linear-gradient(#0a2236aa,#04070dcc);pointer-events:none;mix-blend-mode:multiply}

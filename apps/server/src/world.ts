@@ -1,12 +1,13 @@
 import { LOCS, NPCS } from '@nam/game-data';
 import { CLASS_BASE } from '@nam/shared';
 import { G, now, send, sys, clamp, toLoc, type Player } from './state';
+import { GEO_ANCHORS } from '@nam/game-data';
 import { recalc } from './chars';
 import { questEvent, autoStartHidden } from './quests';
 import { setArrive, inPvp } from './game';
 export function joinLoc(p: Player, to: string, x?: number, y?: number, from?: string) {
   const old = G.locs.get(p.loc); const l = G.locs.get(to)!; const wasPvp = inPvp(p); if (old) old.players.delete(p); leaveHouseSilent(p);
-  p.loc = to; p.c.loc = to; l.players.add(p); p.travel = null; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null;
+  p.loc = to; p.c.loc = to; l.players.add(p); p.travel = null; p.inScene = false; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null;
   const back = from ? LOCS[to].links.find(k => k.to === from) : null; p.x = p.dx = x ?? (back ? clamp(back.x < 50 ? back.x + 8 : back.x - 8, 6, 94) : 50); p.y = p.dy = y ?? (back ? clamp(back.y < 60 ? 62 : back.y - 6, 58, 90) : 78);
   if (!p.c.discovered.includes(to)) { p.c.discovered.push(to); sys(p, `Neuer Ort entdeckt: ${LOCS[to].name}`, 'quest'); }
   if (LOCS[to].kind === 'city') p.c.choices.respawn = to;
@@ -24,6 +25,11 @@ export function startTravel(p: Player, to: string): string | null {
 }
 setArrive(p => { const tr = p.travel; if (!tr) return; joinLoc(p, tr.to, undefined, undefined, tr.from); });
 export function teleportTo(p: Player, to: string, cost: number): string | null {
-  if (p.combatUntil > now()) return 'Im Kampf nicht möglich'; if (p.c.gold < cost) return 'Nicht genug Gold'; p.c.gold -= cost; joinLoc(p, to); return null;
+  if (p.combatUntil > now()) return 'Im Kampf nicht möglich'; if (p.c.gold < cost) return 'Nicht genug Gold'; p.c.gold -= cost; joinLoc(p, to); const a = GEO_ANCHORS[to]; if (p.geo?.has && a) { p.geo.lat = a[0]; p.geo.lon = a[1]; } return null;
 }
 export function leaveHouseSilent(p: Player) { if (!p.houseId) return; const occ = G.houseOcc.get(p.houseId); occ?.delete(p); const hid = p.houseId; p.houseId = null; if (occ) for (const q of occ) send(q, { t: 'houseVisitors', id: hid, visitors: [...occ].map(v => ({ id: v.id, name: v.c.name, cls: v.c.cls, look: v.c.look })) }); }
+/** Ort wechseln ohne Ladebildschirm (Kartenmodus): Zone folgt der realen Position. */
+export function setLocSilent(p: Player, to: string) { if (p.loc === to || !G.locs.get(to)) return; G.locs.get(p.loc)?.players.delete(p); p.loc = to; p.c.loc = to; G.locs.get(to)!.players.add(p); p.dirty = true; }
+/** Kampf-/Dungeonansicht starten (Szene wird im Client angezeigt). */
+export function enterScene(p: Player, locId: string) { setLocSilent(p, locId); p.inScene = true; p.x = p.dx = 50; p.y = p.dy = 78; p.target = null; p.auto = false; p.autoFarm = null; send(p, { t: 'scene', on: true, loc: locId }); }
+export function exitScene(p: Player) { p.inScene = false; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null; send(p, { t: 'scene', on: false }); }

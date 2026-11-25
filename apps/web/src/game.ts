@@ -38,7 +38,8 @@ net.on((m: Msg) => {
       if (view.evts.length > 200) view.evts.splice(0, view.evts.length - 200);
       if (state.loc !== m.loc) set({ loc: m.loc }); set({ snap: m as any }); if (first) { audio.setAmbient(m.weather); } else if (view.prev && view.prev.weather !== m.weather) audio.setAmbient(m.weather); break; }
     case 'char': set({ char: m.c }); break;
-    case 'enter': { view.snap = null; view.evts = []; set({ loc: m.loc, travel: null, dialog: null, died: null, house: null }); audio.startMusic(themeOf(m.loc)); break; }
+    case 'enter': { view.snap = null; view.evts = []; set({ loc: m.loc, travel: null, dialog: null, died: null, house: null, inScene: false }); audio.startMusic(themeOf(m.loc)); break; }
+    case 'scene': { if (m.on) { view.snap = null; view.evts = []; audio.sfx('travel'); } set({ inScene: !!m.on, dialog: m.on ? null : state.dialog, panel: null }); break; }
     case 'chat': pushChat(m); if (m.ch === 'whisper' || m.ch === 'boss' || m.ch === 'party') audio.sfx(m.ch === 'boss' ? 'boss' : 'chat'); if (m.ch === 'loot') toast(m.text, 'loot'); if (m.ch === 'quest') toast(m.text, 'quest'); break;
     case 'quests': if (state.char) set({ char: { ...state.char, quests: m.q, questsDone: m.done } }); break;
     case 'questDone': audio.sfx('quest'); break;
@@ -46,7 +47,7 @@ net.on((m: Msg) => {
     case 'dialog': set({ dialog: m }); audio.sfx('click'); break;
     case 'travel': set({ travel: { to: m.to, ms: m.ms, start: performance.now(), from: m.from }, dialog: null, panel: null }); audio.sfx('travel'); break;
     case 'died': set({ died: { until: m.until } }); audio.sfx('die'); break;
-    case 'respawn': set({ died: null }); break;
+    case 'respawn': set({ died: null, inScene: false }); break;
     case 'autoFarm': set({ autoFarm: m.on ? Date.now() + m.ms : 0 }); break;
     case 'invite': set({ invites: [...state.invites.filter(i => !(i.kind === m.kind && i.fromId === m.fromId)), { ...m, at: Date.now() }] }); audio.sfx('notify'); setTimeout(() => set({ invites: state.invites.filter(i => Date.now() - i.at < 59000) }), 60000); break;
     case 'partyInfo': set({ party: m.id ? m : null }); break;

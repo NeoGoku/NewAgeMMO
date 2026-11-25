@@ -39,3 +39,13 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Grafik semi-realistisch (Licht, Texturen, Rim-Light, Effekte, Icons) | ◐ Screenshots geprüft; Performance auf Handy ungemessen |
 | GitHub Pages / Release (APK) Workflows | ◐ siehe README/Deployment; Laufstatus siehe Actions |
 | Öffentlicher Multiplayer-Server | ✖ benötigt externe Konten (Render/Neon) |
+
+## Map-First-Umbau
+| Bereich | Status |
+|---|---|
+| Karte als permanente Hauptansicht, Zoom/Drehung/Verschieben | ✔ (Browser-Test, Mobil-Viewport) |
+| Keine Stadtansicht/„Erde“-Schaltfläche mehr | ✔ |
+| NPCs, Werkstätten, Teleporter als Kartenobjekte mit Nähe-Interaktion | ✔ Server-Logik; Dialog über Karte geprüft (Server-Test) |
+| Monster/Dungeons → Kampfszene und Zurück zur Karte | ✔ Logik; Szene im Browser nicht separat geprüft |
+| Eroberbare Gebiete | ✖ offen |
+| Ereignisleiste, Kampfskills nur im Kampf, Chat eingeklappt | ✔ |

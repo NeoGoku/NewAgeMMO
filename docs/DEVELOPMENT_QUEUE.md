@@ -12,3 +12,7 @@
 ## v2-Stand
 - [implementiert/geprüft] Geo-System (Server: Spawns, Anti-Cheat, Datenschutz; Client: MapLibre/OSM), PostGIS-Migration (gegen lokales PostgreSQL 16+PostGIS getestet), Solo-Modus im Browser, Pages/Release-Workflows (noch nicht auf GitHub gelaufen).
 - [offen] Öffentlicher Server (benötigt Render-/Neon-Zugang des Auftraggebers), Geo-Quests als eigener Typ, OSM-POI-Import (Overpass) in PostGIS, Gilden-Territorien, weitere Grafikpolitur.
+
+## Map-First (aktuell)
+- [implementiert/geprüft] Karte als Hauptansicht, Ereignisleiste (5 Bereiche + Mehr), kompakte Charakteranzeige, eingeklappter Chat, Kampfskills nur im Kampf, Szenenwechsel per Server-Nachricht, NPCs/Werkstätten als Kartenobjekte mit Nähe-Interaktion.
+- [offen] Eroberbare Gebiete (Gilden-Territorien), Teleporter-Auswahl auf der Karte als Ortsmarken, Gilden-/Housing-Objekte aus realen Positionen, Geo-Quests, Dungeon-Betretung mit eigener Karten-Ansicht, Erprobung auf echtem Android-Gerät.

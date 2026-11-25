@@ -203,7 +203,7 @@ function playerTick(p: Player, l: LocState, t: number, dt: number) {
   // Duell-Timeout
   if (p.duel && t > p.duel.until) { const o = G.players.get(p.duel.opp); p.duel = null; if (o) o.duel = null; sys(p, 'Duell abgebrochen (Zeit).'); }
 }
-function respawn(p: Player) { const l = locOf(p); const rl = LOCS[p.c.choices.respawn || 'aurelia_plaza'] ? (p.c.choices.respawn || 'aurelia_plaza') : 'aurelia_plaza'; const target = LOCS[p.loc].kind === 'arena' ? 'arena' : rl; p.dead = false; recalc(p); p.c.hp = Math.ceil(p.st.maxHp * .5); p.fx = []; p.shield = 0; if (target !== p.loc) { l.players.delete(p); p.loc = target; G.locs.get(target)!.players.add(p); } p.x = p.dx = 50; p.y = p.dy = 80; send(p, { t: 'respawn', loc: p.loc }); send(p, { t: 'char', c: p.c }); }
+function respawn(p: Player) { const l = locOf(p); const rl = LOCS[p.c.choices.respawn || 'aurelia_plaza'] ? (p.c.choices.respawn || 'aurelia_plaza') : 'aurelia_plaza'; const target = LOCS[p.loc].kind === 'arena' ? 'arena' : rl; p.dead = false; p.inScene = false; send(p, { t: 'scene', on: false }); recalc(p); p.c.hp = Math.ceil(p.st.maxHp * .5); p.fx = []; p.shield = 0; if (target !== p.loc) { l.players.delete(p); p.loc = target; G.locs.get(target)!.players.add(p); } p.x = p.dx = 50; p.y = p.dy = 80; send(p, { t: 'respawn', loc: p.loc }); send(p, { t: 'char', c: p.c }); }
 function petTick(p: Player, l: LocState, t: number, tg: Mob | null | undefined) {
   const pet = p.c.pets.find(x => x.uid === p.c.activePet); if (!pet || pet.hatchAt) return; const sp = SPECIES[pet.species];
   if (t < p.petAt) return; p.petAt = t + 2400 / sp.spd; if (pet.energy < 100 && t % 3 < 1) pet.energy = Math.min(100, pet.energy + (p.combatUntil > t ? 0 : 1)); if (pet.energy <= 0 || p.combatUntil < t) return;

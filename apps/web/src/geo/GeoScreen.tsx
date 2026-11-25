@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { GEO, haversine, type GeoObj, type GeoPlayer } from '@nam/shared';
+import { set } from '../store';
+import { geoBus } from './bus';
 import { net } from '../net';
 import { toast } from '../store';
 
@@ -14,8 +16,8 @@ interface Me { lat: number; lon: number; mode?: string; speed?: number; flags?: 
 const readConsent = (): Consent => { try { const v = localStorage.getItem(KEY); return v === 'gps' || v === 'virtual' ? v : null; } catch { return null; } };
 const saveConsent = (v: string) => { try { localStorage.setItem(KEY, v); } catch { /* kein Storage */ } };
 
-const COL: Record<string, string> = { mob: '#e5484d', node: '#46c46a', dungeon: '#9b59ff', city: '#22d3ee', house: '#f5c542', npc: '#ffe066', poi: '#ffffff' };
-const GLYPH: Record<string, string> = { node: '◆', dungeon: '⛩', city: '🏛', house: '⌂', npc: '!', poi: '•' };
+const COL: Record<string, string> = { station: '#f0a050', mob: '#e5484d', node: '#46c46a', dungeon: '#9b59ff', city: '#22d3ee', house: '#f5c542', npc: '#ffe066', poi: '#ffffff' };
+const GLYPH: Record<string, string> = { station: '⚒', node: '◆', dungeon: '⛩', city: '🏛', house: '⌂', npc: '!', poi: '•' };
 
 function circle(lat: number, lon: number, r: number, n = 64) {
   const pts: number[][] = []; const dLat = r / 111320; const dLon = r / (111320 * Math.max(0.05, Math.cos(lat * Math.PI / 180)));
@@ -26,36 +28,36 @@ const poly = (lat: number, lon: number, r: number, props: any = {}) => ({ type: 
 const fc = (features: any[]) => ({ type: 'FeatureCollection' as const, features });
 
 const CSS = `
-.geo{position:fixed;inset:0;z-index:60;background:#0a0e1a;color:#e8ecff;font:14px system-ui,sans-serif;touch-action:none}
+.geo{position:absolute;inset:0;z-index:1;color:#d6f7ff;font:13px/1.3 system-ui,sans-serif}
 .geo .map{position:absolute;inset:0}
-.geo .map canvas{filter:brightness(.82) saturate(.75) hue-rotate(8deg) contrast(1.05)}
-.geo .map:after{content:"";position:absolute;inset:0;background:linear-gradient(rgba(20,30,90,.22),rgba(40,10,70,.22));pointer-events:none;mix-blend-mode:multiply}
-.geo button{font:inherit;color:#e8ecff;background:rgba(18,24,48,.88);border:1px solid #3a4580;border-radius:12px;min-width:48px;min-height:48px;padding:0 14px;cursor:pointer;backdrop-filter:blur(4px)}
-.geo button.on{background:#2b4bd0;border-color:#7a95ff}.geo button.danger{border-color:#c0394a;color:#ffb3bb}.geo button:disabled{opacity:.5}
-.geo .top{position:absolute;left:0;right:0;top:0;padding:calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));display:flex;gap:8px;align-items:flex-start;justify-content:space-between;pointer-events:none}
-.geo .top>*{pointer-events:auto}
-.geo .status{background:rgba(10,14,30,.85);border:1px solid #3a4580;border-radius:12px;padding:8px 12px;font-size:13px;line-height:1.4;flex:1;max-width:520px}
-.geo .status .bad{color:#ff6b78;font-weight:700}
-.geo .side{position:absolute;right:calc(8px + env(safe-area-inset-right));top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px}
-.geo .bottom{position:absolute;left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));bottom:calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
-.geo .bottom>*{pointer-events:auto}
-.geo .pop{position:absolute;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(340px,calc(100% - 24px));background:rgba(12,16,36,.96);border:1px solid #7a95ff;border-radius:14px;padding:12px}
-.geo .pop h3{margin:0 0 4px;font-size:16px}.geo .pop .dim{opacity:.7;font-size:13px}.geo .pop .row{display:flex;gap:8px;margin-top:10px}.geo .pop .row button{flex:1}
-.geo .dlg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,20,.82);padding:16px;z-index:5}
-.geo .dlg>div{background:#10163a;border:1px solid #7a95ff;border-radius:16px;padding:18px;max-width:420px;width:100%;max-height:90%;overflow:auto}
-.geo .dlg h2{margin:0 0 8px}.geo .dlg p{margin:6px 0;line-height:1.45}.geo .dlg .col{display:flex;flex-direction:column;gap:8px;margin-top:12px}
-.geo .mk{display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:700;font-size:12px;color:#fff;border:2px solid rgba(255,255,255,.85);text-shadow:0 1px 2px #000;cursor:pointer;box-shadow:0 0 6px rgba(0,0,0,.7)}
-.geo .mk.near{box-shadow:0 0 0 3px rgba(255,240,150,.9),0 0 16px 6px rgba(255,230,120,.8)}
-.geo .mk.boss{animation:geopulse 1.1s ease-in-out infinite}
-.geo .mk.pl{width:18px;height:18px;background:#3b82f6;cursor:default}
-.geo .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:11px;text-shadow:0 0 3px #000,0 0 3px #000;pointer-events:none;font-weight:600}
-.geo .me{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:26px;color:#7dd3fc;filter:drop-shadow(0 0 6px #38bdf8);pointer-events:none}
-.geo .maplibregl-ctrl-attrib{font-size:10px;background:rgba(10,14,30,.7)!important;color:#aab}
-.geo .maplibregl-ctrl-attrib a{color:#8fb0ff}
-@keyframes geopulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
-`;
+.geo .maplibregl-ctrl-attrib{background:#0008!important;color:#8fa3b8!important;font-size:10px}
+.geo .top{position:absolute;left:50%;top:calc(92px + var(--sat));transform:translateX(-50%);z-index:5;pointer-events:none;text-align:center}
+.geo .status{background:#04101ccc;border:1px solid #1ee8ff55;border-radius:99px;padding:4px 12px;font-size:12px;letter-spacing:.02em;white-space:nowrap;box-shadow:0 0 14px #1ee8ff22}
+.geo .status .bad{color:#ff6b7a;margin-top:2px}
+.geo .side{position:absolute;right:calc(10px + var(--sar));top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;z-index:5}
+.geo button{background:#06121fe6;color:#cdeeff;border:1px solid #1ee8ff66;border-radius:12px;min-width:44px;min-height:44px;padding:0 10px;font:inherit;box-shadow:0 0 12px #1ee8ff22}
+.geo button.on{background:#0c3a4acc;border-color:#5ef2ff;box-shadow:0 0 16px #5ef2ff66}
+.geo .side button{width:44px;padding:0}
+.geo .mk{border-radius:50%;border:2px solid #ffffffaa;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;box-shadow:0 0 12px currentColor;position:relative;cursor:pointer}
+.geo .mk.near{box-shadow:0 0 0 3px #5ef2ff,0 0 18px #5ef2ff}
+.geo .mk .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;margin-top:2px;text-shadow:0 1px 2px #000,0 0 6px #000;pointer-events:none}
+.geo .mk.boss{animation:gpulse 1.6s infinite}
+@keyframes gpulse{50%{box-shadow:0 0 0 6px #c46cff55,0 0 24px #c46cff}}
+.geo .me{width:22px;height:22px;border-radius:50%;background:#5ef2ff;border:3px solid #fff;box-shadow:0 0 0 6px #5ef2ff33,0 0 18px #5ef2ff;color:#04101c;font-size:12px;display:flex;align-items:center;justify-content:center}
+.geo .pop{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 150px + var(--sab));z-index:12;background:#04101cf2;border:1px solid #1ee8ff88;border-radius:14px;padding:12px 14px;width:min(320px,92vw);box-shadow:0 10px 40px #000a,0 0 24px #1ee8ff33}
+.geo .pop h3{margin:0 0 2px;font-size:16px;color:#eaffff}
+.geo .pop .dim{color:#7fa3b8;font-size:12px}
+.geo .pop .row{display:flex;gap:8px;margin-top:10px}
+.geo .pop .row button{flex:1}
+.geo .dlg{position:absolute;inset:0;background:#02050acc;display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.geo .dlg>div{background:#04101cf5;border:1px solid #1ee8ff88;border-radius:16px;padding:18px;max-width:420px;box-shadow:0 0 40px #1ee8ff33}
+.geo .dlg h2{margin:0 0 8px;color:#eaffff;font-size:18px}
+.geo .dlg p{color:#a9c4d6}
+.geo .dlg .col{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.geo .dlg button{width:100%;min-height:46px}
+`
 
-export function GeoScreen({ onClose }: { onClose: () => void }) {
+export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const meRef = useRef<Me | null>(null);
@@ -83,6 +85,18 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
   const [walking, setWalking] = useState(false);
 
   followRef.current = follow; modeRef.current = mode; selRef.current = sel;
+  useEffect(() => { if (!hidden) setTimeout(() => mapRef.current?.resize(), 50); }, [hidden]);
+  useEffect(() => {
+    const onMode = () => { if (modeRef.current === 'gps') { setMode('virtual'); net.send('geoStop', {}); } else if (consentRef.current === 'gps') setMode('gps'); else choose('gps'); };
+    const onStop = () => { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); };
+    const onWipe = () => wipe();
+    const onRecenter = () => { const p = myPos(); if (p) { setFollow(true); mapRef.current?.easeTo({ center: [p.lon, p.lat], zoom: 16, bearing: 0 }); } };
+    const onWalk = (e: Event) => { const d = (e as CustomEvent).detail; if (d) walkTo(d.lat, d.lon); };
+    const L: [string, EventListener][] = [['toggleMode', onMode], ['stop', onStop], ['wipe', onWipe], ['recenter', onRecenter], ['walkTo', onWalk]];
+    L.forEach(([t, f]) => geoBus.addEventListener(t, f)); return () => L.forEach(([t, f]) => geoBus.removeEventListener(t, f));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { geoBus.dispatchEvent(new CustomEvent('state', { detail: { mode, walking } })); }, [mode, walking]);
 
   const myPos = () => meRef.current ?? (gpsPos.current ? { lat: gpsPos.current.lat, lon: gpsPos.current.lon } : null);
 
@@ -91,7 +105,7 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
     const map = new maplibregl.Map({
       container: box.current!, center: [BERLIN.lon, BERLIN.lat], zoom: 15, maxZoom: 19, attributionControl: { compact: true },
       style: { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© OpenStreetMap-Mitwirkende' } },
-        layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#0b1024' } }, { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.35, 'raster-brightness-max': 0.7, 'raster-hue-rotate': 200, 'raster-contrast': 0.1 } }] },
+        layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#04070d' } }, { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.72, 'raster-brightness-max': 0.5, 'raster-hue-rotate': 185, 'raster-contrast': 0.28 } }] },
     });
     mapRef.current = map;
     map.on('load', () => {
@@ -213,7 +227,7 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { redraw.current(); }, [follow, mode]);
 
-  function choose(c: 'gps' | 'virtual') { saveConsent(c); setConsent(c); setMode(c); net.send('geoConsent', { on: true, visible: true }); }
+  function choose(c: 'gps' | 'virtual') { saveConsent(c); setConsent(c); setMode(c); net.send('geoConsent', { on: true, visible: true, gps: c === 'gps' }); }
   function wipe() {
     if (!window.confirm('Alle gespeicherten Standortdaten wirklich löschen?')) return;
     net.send('geoWipe', {}); try { localStorage.removeItem(KEY); } catch { /* */ }
@@ -221,28 +235,30 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
   }
   function stop() { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); }
   async function interact(id: string) {
-    setBusy(true); try { const r = await net.req('geoInteract', { id }); if (r.t === 'err' || r.err) toast(r.err || 'Interaktion fehlgeschlagen', 'err'); } finally { setBusy(false); }
+    setBusy(true); try { const r: any = await net.req('geoInteract', { id }); if (r.t === 'err' || r.err) { toast(r.err || 'Interaktion fehlgeschlagen', 'err'); return; }
+      if (r.station) set({ stationProf: r.station, panel: 'craft' }); else if (r.house) { net.send('houseList'); set({ panel: 'houses' }); } else if (r.city) toast(r.text ? r.text.slice(0, 140) : 'Ort betreten');
+      else if (r.gathered) toast('Gesammelt'); setSel(null); } finally { setBusy(false); }
   }
   const zoom = (d: number) => mapRef.current?.zoomTo(mapRef.current.getZoom() + d, { duration: 250 });
   const toggleMode = () => { if (mode === 'gps') { setMode('virtual'); net.send('geoStop', {}); } else if (consent === 'gps') setMode('gps'); else choose('gps'); };
 
   const me = myPos();
-  const o = sel ? objsRef.current.find(x => x.id === sel) : null; const dist = o && me ? haversine(me.lat, me.lon, o.lat, o.lon) : 0; const inRange = !!o && dist <= GEO.interactM;
+  const o = sel ? objsRef.current.find(x => x.id === sel) : null; const dist = o && me ? haversine(me.lat, me.lon, o.lat, o.lon) : 0; const inRange = !!o && dist <= GEO.interactM + (o.r || 0);
   const rejected = info.flags.some(f => f === 'speed' || f === 'teleport');
   const KIND: Record<string, string> = { mob: 'Monster', node: 'Ressource', dungeon: 'Dungeon', city: 'Stadt', house: 'Haus', npc: 'NPC', poi: 'Ort' };
 
   return (
-    <div className="geo">
+    <div className="geo" style={hidden ? { display: 'none' } : undefined}>
       <style>{CSS}</style>
       <div className="map" ref={box} />
       <div className="top">
         <div className="status">
-          <div>{mode === 'gps' ? '📡 GPS' : '🧭 Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h · {info.n} Objekte{walking ? ' · unterwegs' : ''}</div>
+          <div>{mode === 'gps' ? 'GPS' : 'Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h · {info.n} Objekte{walking ? ' · unterwegs' : ''}</div>
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
           {!info.hasMe && consent !== null && <div>Warte auf Position…</div>}
         </div>
-        <button onClick={onClose} aria-label="Schließen">✕</button>
+        {onClose && <button onClick={onClose} aria-label="Schließen">✕</button>}
       </div>
       <div className="side">
         <button onClick={() => zoom(1)} aria-label="Hineinzoomen">＋</button>
@@ -263,11 +279,6 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       )}
-      <div className="bottom">
-        <button className={mode === 'gps' ? 'on' : ''} onClick={toggleMode}>{mode === 'gps' ? '📡 GPS' : '🧭 Virtuell'}</button>
-        {mode === 'virtual' && <button className="danger" disabled={!walking} onClick={stop}>■ Stopp</button>}
-        <button onClick={wipe} style={{ marginLeft: 'auto' }}>Meine Standortdaten löschen</button>
-      </div>
       {consent === null && (
         <div className="dlg"><div>
           <h2>Standort & Datenschutz</h2>
@@ -277,7 +288,6 @@ export function GeoScreen({ onClose }: { onClose: () => void }) {
           <div className="col">
             <button className="on" onClick={() => choose('gps')}>GPS verwenden</button>
             <button onClick={() => choose('virtual')}>Nur virtuell spielen</button>
-            <button onClick={onClose}>Abbrechen</button>
           </div>
         </div></div>
       )}
