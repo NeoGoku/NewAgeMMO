@@ -1,6 +1,6 @@
 import { SPECIES } from '@nam/game-data';
 import type { ClassId, Look } from '@nam/shared';
-import { Ctx, TAU, blob, poly, glow, shade, mix, alpha, lg, rr, star, mkCanvas, ctx2, hash } from './util';
+import { Ctx, TAU, blob, poly, glow, shade, mix, alpha, lg, rr, star, mkCanvas, ctx2, hash, texture } from './util';
 import { drawFurniture } from './furniture';
 import { drawPortrait } from './character';
 import { drawPet, drawMobIconBase, MobArt } from './mobs';
@@ -77,7 +77,9 @@ function tile(c: Ctx, col: string, kind: 'item' | 'skill') {
   rr(c, 2, 2, 96, 96, 18); const bg = lg(c, 0, 0, 100, 100, 0, mix(col, '#1a1e2c', kind === 'skill' ? .55 : .8), 1, '#080a12'); c.fillStyle = bg; c.fill();
   c.save(); rr(c, 2, 2, 96, 96, 18); c.clip(); const g = c.createRadialGradient(50, 46, 4, 50, 50, 64); g.addColorStop(0, alpha(col, kind === 'skill' ? .35 : .2)); g.addColorStop(1, alpha(col, 0)); c.fillStyle = g; c.fillRect(0, 0, 100, 100);
   c.fillStyle = 'rgba(255,255,255,.07)'; c.beginPath(); c.ellipse(50, -20, 90, 52, 0, 0, TAU); c.fill(); c.restore();
-  c.strokeStyle = alpha(mix(col, '#ffffff', .25), .7); c.lineWidth = 2.5; rr(c, 2, 2, 96, 96, 18); c.stroke(); c.strokeStyle = 'rgba(0,0,0,.6)'; c.lineWidth = 1; rr(c, 4.5, 4.5, 91, 91, 16); c.stroke();
+  const gp = texture(c, 'grain'); if (gp) { c.save(); rr(c, 2, 2, 96, 96, 18); c.clip(); c.globalAlpha = .22; c.fillStyle = gp; c.fillRect(0, 0, 100, 100); c.restore(); }
+  c.save(); rr(c, 2, 2, 96, 96, 18); c.clip(); const vg = c.createRadialGradient(50, 46, 30, 50, 50, 72); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,8,.45)'); c.fillStyle = vg; c.fillRect(0, 0, 100, 100); const fl = c.createLinearGradient(0, 2, 0, 40); fl.addColorStop(0, 'rgba(255,255,255,.12)'); fl.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = fl; c.fillRect(0, 0, 100, 40); c.restore();
+  c.strokeStyle = alpha(mix(col, '#ffffff', .25), .7); c.lineWidth = 2.5; rr(c, 2, 2, 96, 96, 18); c.stroke(); c.strokeStyle = 'rgba(255,255,255,.14)'; c.lineWidth = 1; rr(c, 4, 4, 92, 92, 16); c.stroke(); c.strokeStyle = 'rgba(0,0,0,.6)'; c.lineWidth = 1; rr(c, 5.5, 5.5, 89, 89, 15); c.stroke();
 }
 const FURN_SHAPES = new Set(['bed', 'sofa', 'table', 'chair', 'shelf', 'lamp', 'neon', 'chest', 'safe', 'bench', 'alch', 'garden', 'petbed', 'plant', 'tree', 'rug', 'tv', 'aquarium', 'statue', 'piano', 'fire', 'desk', 'crystal']);
 export function iconUrl(shape: string, color: string, size = 64): string {
@@ -87,9 +89,20 @@ export function iconUrl(shape: string, color: string, size = 64): string {
     const cv = mkCanvas(size, size), c = ctx2(cv); c.scale(size / 100, size / 100); const col = color || '#9aa4b8';
     const isSk = shape.startsWith('sk_'); tile(c, col, isSk ? 'skill' : 'item');
     c.save(); rr(c, 2, 2, 96, 96, 18); c.clip();
-    if (isSk) (SK[shape] || SK.sk_dmg)(c, col);
+    /** Item-Layer: Beleuchtung (Highlight/Schatten/Körnung), Drop-Shadow und Rarity-Glow in Itemfarbe */
+    const layered = (f: (cc: Ctx) => void) => {
+      const lay = mkCanvas(size, size), lc = ctx2(lay); lc.scale(size / 100, size / 100); f(lc); lc.setTransform(1, 0, 0, 1, 0, 0);
+      lc.globalCompositeOperation = 'source-atop';
+      const lgr = lc.createLinearGradient(0, 0, size, size); lgr.addColorStop(0, 'rgba(255,255,255,.3)'); lgr.addColorStop(.42, 'rgba(255,255,255,0)'); lgr.addColorStop(1, 'rgba(0,0,10,.34)'); lc.fillStyle = lgr; lc.fillRect(0, 0, size, size);
+      const sp = lc.createRadialGradient(size * .32, size * .26, 0, size * .32, size * .26, size * .3); sp.addColorStop(0, 'rgba(255,255,255,.3)'); sp.addColorStop(1, 'rgba(255,255,255,0)'); lc.fillStyle = sp; lc.fillRect(0, 0, size, size);
+      const gp = texture(lc, 'grain'); if (gp) { lc.globalAlpha = .3; lc.fillStyle = gp; lc.fillRect(0, 0, size, size); lc.globalAlpha = 1; }
+      const s0 = size / 100, OFF = 6000;
+      c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = .75; c.shadowColor = alpha(col, .9); c.shadowBlur = 9 * s0; c.shadowOffsetX = OFF; c.drawImage(lay, -OFF / s0, 0, 100, 100); c.restore();
+      c.save(); c.shadowColor = 'rgba(0,0,10,.5)'; c.shadowBlur = 5 * s0; c.shadowOffsetY = 2.5 * s0; c.drawImage(lay, 0, 0, 100, 100); c.restore();
+    };
+    if (isSk) layered(cc => (SK[shape] || SK.sk_dmg)(cc, col));
     else if (shape.startsWith('furn_')) { const s = shape.slice(5); c.translate(14, 14); drawFurniture(c, FURN_SHAPES.has(s) ? s : 'box', 0, 0, 72, 72, col, 0, 0); }
-    else if (SH[shape]) SH[shape](c, col);
+    else if (SH[shape]) layered(cc => SH[shape](cc, col));
     else { glow(c, 50, 50, 40, col, .5); poly(c, [50, 14, 84, 50, 50, 86, 16, 50], lg(c, 16, 14, 84, 86, 0, shade(col, .5), 1, shade(col, -.4)), 'rgba(8,10,18,.85)', 2); c.fillStyle = '#fff'; c.font = 'bold 34px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('?', 50, 52); }
     c.restore(); url = cv.toDataURL('image/png');
   } catch { url = ''; }
