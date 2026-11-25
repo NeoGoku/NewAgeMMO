@@ -52,7 +52,11 @@ export function createAdmin(store: Store, configuredUsers: () => string | undefi
 
       // Persist the authorized request before applying any change.
       const log = (action: AdminAuditEntry['action'], detail?: string, target?: string) =>
-        record({ id: uid('audit'), at: now(), actor: actor.name, action, detail, target });
+        record({
+          id: uid('audit'), at: now(), actor: actor.name, action,
+          ...(detail !== undefined && { detail }),
+          ...(target !== undefined && { target })
+        });
       if (request.cmd === 'announce') {
         const text = typeof request.text === 'string' ? request.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200) : '';
         if (!text) return 'Bitte eine Ankündigung eingeben.';
