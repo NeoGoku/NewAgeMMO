@@ -1,11 +1,14 @@
 export * from './items'; export * from './furniture'; export * from './classes'; export * from './monsters'; export * from './professions'; export * from './world'; export * from './quests'; export * from './pets';
 import { ITEMS } from './items'; import { MOBS } from './monsters'; import { LOCS, NPCS } from './world'; import { QUESTS } from './quests'; import { SPECIES } from './pets';
 import { NODES, RECIPES } from './professions'; import { SKILLS } from './classes';
-import { GEO_REGIONAL_NPCS } from './geo';
+import { GEO_ANCHORS, GEO_REGIONAL_NPCS, GEO_TERRITORIES } from './geo';
 for (const sp of Object.values(SPECIES)) ITEMS['egg_' + sp.id] = { id: 'egg_' + sp.id, name: sp.name + '-Ei', type: 'egg', tier: 0, lvl: 1, stack: 20, price: 400, desc: 'Brüte das Ei aus – ein neues Pet schlüpft.', icon: { shape: 'egg', color: sp.color }, tradable: true, use: { hatch: sp.id } };
 /** Validiert Referenzen der Spieldaten (stabile IDs). Gibt Fehlerliste zurück. */
 export function validateData(): string[] {
   const e: string[] = [];
+  for (const [id, territory] of Object.entries(GEO_TERRITORIES)) {
+    if (!GEO_ANCHORS[territory.loc] || !LOCS[territory.loc]?.pvp) e.push(`territory ${id}: ${territory.loc}`);
+  }
   for (const id of GEO_REGIONAL_NPCS) if (!NPCS[id]) e.push(`regional npc: ${id}`);
   for (const m of Object.values(MOBS)) for (const d of m.drops) if (!d.id.startsWith('@') && !ITEMS[d.id]) e.push(`mob ${m.id}: item ${d.id}`);
   for (const l of Object.values(LOCS)) { for (const s of l.spawns) if (!MOBS[s.mob]) e.push(`loc ${l.id}: mob ${s.mob}`); for (const n of l.nodes) if (!NODES[n.def]) e.push(`loc ${l.id}: node ${n.def}`); for (const k of l.links) if (!LOCS[k.to]) e.push(`loc ${l.id}: link ${k.to}`); for (const h of l.hotspots) if (h.npc && !NPCS[h.npc]) e.push(`hs ${h.id}`); }

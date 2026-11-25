@@ -14,3 +14,12 @@ export function placeNear(loc: string, key: string): [number, number] {
   const ang = ((h % 3600) / 3600) * 2 * Math.PI; const span = Math.max(60, Math.min(260, a[2] * 0.5)); const d = 70 + (((h >>> 12) % 1000) / 1000) * span;
   return [a[0] + (d * Math.cos(ang)) / 111320, a[1] + (d * Math.sin(ang)) / (111320 * Math.cos((a[0] * Math.PI) / 180))];
 }
+
+/** Fixed strongholds use existing PvP zones and never change their PvP rules. */
+export const GEO_TERRITORIES = {
+  colosseum: { loc: 'arena', name: 'Banner am Colosseum', radius: 90 },
+  moorwacht: { loc: 'schattenmoor', name: 'Moorwacht', radius: 110 },
+} as const;
+export type GeoTerritoryId = keyof typeof GEO_TERRITORIES;
+export const validGeoTerritoryId = (value: unknown): value is GeoTerritoryId =>
+  typeof value === 'string' && Object.hasOwn(GEO_TERRITORIES, value);

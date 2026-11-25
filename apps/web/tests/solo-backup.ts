@@ -10,6 +10,7 @@ character.questsDone = ['q_home'];
 const data = {
   accounts: { player: { id: 'a123', name: 'Player', hash: 'a'.repeat(64), salt: 'b'.repeat(32), created: 123, tokens: [] } },
   chars: { [character.id]: character },
+  territories: { colosseum: { id: 'colosseum', guildId: 'g123', capturedAt: 1234 } },
 };
 
 const encoded = backups.serializeSoloBackup(data);
@@ -18,6 +19,9 @@ assert.throws(() => backups.parseSoloBackup('{invalid'), /Sicherung/);
 const corrupt = JSON.parse(encoded);
 corrupt.data.chars[character.id].inventory = {};
 assert.throws(() => backups.parseSoloBackup(JSON.stringify(corrupt)), /Spielstand/);
+const invalidTerritory = JSON.parse(encoded);
+invalidTerritory.data.territories.colosseum.id = 'fremd';
+assert.throws(() => backups.parseSoloBackup(JSON.stringify(invalidTerritory)), /Spielstand/);
 const orphan = JSON.parse(encoded);
 orphan.data.accounts = {};
 assert.throws(() => backups.parseSoloBackup(JSON.stringify(orphan)), /Spielstand/);

@@ -1,8 +1,9 @@
+import { territoryObjects } from './guild-territories';
 import { GEO, cellId, hash32, haversine, rad, rng, type GeoObj } from '@nam/shared';
 import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NODES, NPCS, placeNear, type MobDef } from '@nam/game-data';
 import { G, now } from './state';
 import { osmObjects } from './geo-osm';
-import { propertyObjects } from './geo-property-data';
+import { propertyObjects } from './geo-property-regions';
 
 export const anchorList = Object.entries(GEO_ANCHORS);
 const nearestAnchor = (lat: number, lon: number) => {
@@ -112,6 +113,7 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
   const bucket = Math.floor(t / GEO.spawnBucketMs);
   const hour = Math.floor(t / 36e5);
   for (const o of STATIC) keep(o);
+  for (const territory of territoryObjects()) keep(territory);
   for (const cell of nearbyCells(lat, lon, radius)) {
     const id = cellId(cell.row, cell.column);
     const seed = hash32(id);
@@ -145,11 +147,17 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
   for (const [id, a] of anchorList) {
     keep({ id: 'c:' + id, k: 'city', def: id, lat: a[0], lon: a[1], name: LOCS[id].name, lvl: LOCS[id].lvl[0], r: a[2], extra: { kind: LOCS[id].kind } }, radius + a[2]);
   }
+  const properties = new Map(propertyObjects(lat, lon, radius).map(item => [item.id, item]));
   for (const house of G.houses.values()) {
+    const owned = house.propertyId && G.chars.get(house.ownerId)?.geoProperty;
+    if (owned && owned.id === house.propertyId) {
+      const { id, lat, lon } = owned.building;
+      properties.set(id, { id, k: 'house', def: 'property', lat, lon, name: 'Immobilie', extra: { source: 'OpenStreetMap', building: owned.building.building } });
+    }
     const position = house.geo;
     if (position) keep({ id: 'h:' + house.id, k: 'house', def: house.kind, ...position, name: `${house.kind === 'guild' ? 'Gildenhaus' : 'Haus'} ${house.ownerName}` });
   }
-  for (const property of propertyObjects(lat, lon, radius)) keep(property);
+  for (const property of properties.values()) keep(property);
   for (const poi of osmObjects(lat, lon, radius)) keep(poi);
   return out.sort((a, b) => haversine(lat, lon, a.lat, a.lon) - haversine(lat, lon, b.lat, b.lon));
 }

@@ -1,18 +1,11 @@
 import { useEffect, useState } from 'react';
-import { haversine, type GeoCoord, type GeoTravelMode, type GeoTravelView } from '@nam/shared';
+import { GEO, haversine, type GeoCoord, type GeoRoute, type GeoRoutePreview, type GeoTravelMode, type GeoTravelView } from '@nam/shared';
 import { net } from '../net';
 import { toast } from '../store';
 import { distanceLabel } from './quest-map';
 
 export interface RouteTarget extends GeoCoord { name?: string; address?: string }
-export interface RouteLine { id: string; points: GeoCoord[] }
-interface Preview extends RouteLine {
-  target: GeoCoord;
-  mode: GeoTravelMode;
-  totalM: number;
-  etaSeconds: number;
-  label?: string;
-}
+export type RouteLine = GeoRoute;
 
 const transport: Record<GeoTravelMode, string> = {
   walk: 'Zu Fuß', run: 'Rennen', bike: 'Fahrrad', mount: 'Reittier',
@@ -34,49 +27,65 @@ export function RoutePlanner({ target, start, available, onGeometry, onStarted, 
   onStarted: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<GeoTravelMode>('walk');
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [status, setStatus] = useState('Route wird berechnet …');
+  const [preferredMode, setMode] = useState<GeoTravelMode>('walk');
+  const mode = available.includes(preferredMode) ? preferredMode : 'walk';
+  const [preview, setPreview] = useState<GeoRoutePreview | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [direct, setDirect] = useState(false);
   const [attempt, retry] = useState(0);
+  const airDistance = haversine(start.lat, start.lon, target.lat, target.lon);
+  const supportsDirect = mode === 'walk' || mode === 'run';
+  const useDirect = direct && supportsDirect;
   useEffect(() => {
     let current = true;
     setPreview(null);
     onGeometry(null);
-    setStatus('Route wird berechnet …');
-    void net.req('geoRoutePreview', { lat: target.lat, lon: target.lon, mode }).then(reply => {
+    setError('');
+    setLoading(true);
+    void net.req('geoRoutePreview', {
+      lat: target.lat, lon: target.lon, mode, direct: useDirect, refresh: attempt > 0,
+    }).then(reply => {
       if (!current) return;
-      if (reply.t === 'err') { setStatus(reply.err); return; }
-      const next = reply.preview as Preview | undefined;
-      if (!next || next.points?.length < 2) { setStatus('Für dieses Ziel ist keine Route verfügbar.'); return; }
+      setLoading(false);
+      if (reply.t === 'err') { setError(reply.err); return; }
+      const next = reply.preview as GeoRoutePreview | undefined;
+      if (!next || next.points?.length < 2) { setError('Für dieses Ziel ist keine Route verfügbar.'); return; }
       setPreview(next);
       onGeometry(next);
-      setStatus('');
     });
     return () => { current = false; onGeometry(null); };
-  }, [target.lat, target.lon, mode, attempt, onGeometry]);
+  }, [target.lat, target.lon, mode, useDirect, attempt, onGeometry]);
 
   const startTravel = async () => {
-    if (!preview) return;
+    if (loading || starting || !preview || preview.mode !== mode || !!preview.direct !== useDirect ||
+      preview.target.lat !== target.lat || preview.target.lon !== target.lon) return;
     setStarting(true);
-    const reply = await net.req('geoRouteStart', { lat: target.lat, lon: target.lon, mode, previewId: preview.id });
-    if (reply.t === 'err') { setStatus(reply.err); setStarting(false); return; }
+    setError('');
+    const reply = await net.req('geoRouteStart', {
+      lat: target.lat, lon: target.lon, mode, direct: useDirect, previewId: preview.id,
+    });
+    if (reply.t === 'err') { setError(reply.err); setStarting(false); return; }
     onStarted();
   };
 
   return <section className="route-panel" aria-label="Reise planen">
     <div className="row"><strong className="grow">{target.name ?? preview?.label ?? 'Ziel auf der Karte'}</strong><button type="button" aria-label="Reiseplanung schließen" onClick={onClose}>×</button></div>
     <div className="dim">{target.address || `${target.lat.toFixed(5)}, ${target.lon.toFixed(5)}`}</div>
-    <label>Fortbewegung <select value={mode} onChange={e => setMode(e.target.value as GeoTravelMode)} disabled={starting}>
+    <label>Fortbewegung <select value={mode} onChange={e => { setDirect(false); setMode(e.target.value as GeoTravelMode); }} disabled={starting}>
       {modes.map(id => <option key={id} value={id} disabled={!available.includes(id)}>{transport[id]}{available.includes(id) ? '' : ' · gesperrt'}</option>)}
     </select></label>
     {preview
-      ? <div>{mode === 'fly' ? 'Flugstrecke' : 'Route'} {distanceLabel(preview.totalM)} · {duration(preview.etaSeconds)}</div>
-      : <div>Luftlinie {distanceLabel(haversine(start.lat, start.lon, target.lat, target.lon))}</div>}
-    {status && <div role="status">{status}</div>}
+      ? <div>{preview.direct ? 'Direkte virtuelle Bewegung · Luftlinie' : mode === 'fly' ? 'Flugstrecke' : 'Straßen- und Wegenetz'} {distanceLabel(preview.totalM)} · {duration(preview.etaSeconds)}</div>
+      : <div>Luftlinie {distanceLabel(airDistance)}</div>}
+    {(loading || starting || error) && <div role="status">{loading ? 'Route wird berechnet …' : starting ? 'Reise wird gestartet …' : error}</div>}
     <div className="row wrap">
-      <button type="button" className="on" disabled={!preview || starting} onClick={() => void startTravel()}>Reise starten</button>
-      {status && !status.endsWith(' …') && <button type="button" disabled={starting} onClick={() => retry(n => n + 1)}>Neu berechnen</button>}
+      <button type="button" className="on" disabled={!preview || loading || starting} onClick={() => void startTravel()}>Reise starten</button>
+      <button type="button" disabled={starting || loading} onClick={() => retry(n => n + 1)}>Neu berechnen</button>
+      {useDirect && <button type="button" disabled={starting} onClick={() => setDirect(false)}>Straßenroute versuchen</button>}
+      {!useDirect && supportsDirect && error && airDistance <= GEO.directTravelMaxM &&
+        <button type="button" disabled={starting || loading} onClick={() => setDirect(true)}>Direkt virtuell bewegen</button>}
     </div>
   </section>;
 }
@@ -91,7 +100,7 @@ export function TravelStatus({ travel, onReroute }: { travel: GeoTravelView; onR
     } finally { setPending(false); }
   };
   return <section className="route-panel" aria-label="Aktuelle Reise">
-    <strong>{travel.status === 'arrived' ? 'Ziel erreicht' : travel.status === 'paused' ? 'Reise pausiert' : 'Reise läuft'} · {transport[travel.mode]}</strong>
+    <strong>{travel.status === 'arrived' ? 'Ziel erreicht' : travel.status === 'paused' ? 'Reise pausiert' : 'Reise läuft'} · {transport[travel.mode]}{travel.direct ? ' · Luftlinie' : ''}</strong>
     {travel.status !== 'arrived' && <div>{distanceLabel(travel.remainingM)} verbleibend · {duration(travel.etaSeconds)}</div>}
     <div className="row wrap">
       {travel.status === 'moving' && <button type="button" disabled={pending} onClick={() => void action('geoRoutePause')}>Pausieren</button>}

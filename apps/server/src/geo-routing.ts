@@ -1,4 +1,4 @@
-import { GEO_TRAVEL_MODES, haversine, moveToward, type Character, type GeoCoord, type GeoTravelMode, type SavedGeoTrip } from '@nam/shared';
+import { GEO, GEO_TRAVEL_MODES, geoTravelSpeed, haversine, moveToward, type Character, type GeoCoord, type GeoTravelMode, type SavedGeoTrip } from '@nam/shared';
 
 const COSTING = { walk: 'pedestrian', run: 'pedestrian', bike: 'bicycle', mount: 'pedestrian', motorbike: 'motorcycle', car: 'auto' } as const;
 const MAX_POINTS = 12000;
@@ -59,9 +59,15 @@ export function travelModes(c: Character): GeoTravelMode[] {
   });
 }
 
-export async function planRoute(origin: GeoCoord, target: GeoCoord, mode: GeoTravelMode): Promise<{ points: GeoCoord[]; speedMps: number } | string> {
-  if (geoDistance(origin, target) < 1) return 'Du bist bereits am Ziel';
-  const limitMps = GEO_TRAVEL_MODES[mode].speedMps;
+export async function planRoute(origin: GeoCoord, target: GeoCoord, mode: GeoTravelMode, direct = false, mount?: string): Promise<{ points: GeoCoord[]; speedMps: number; direct?: true } | string> {
+  const distance = geoDistance(origin, target);
+  if (distance < 1) return 'Du bist bereits am Ziel';
+  const limitMps = geoTravelSpeed(mode, mount);
+  if (direct) {
+    if (mode !== 'walk' && mode !== 'run') return 'Direkte virtuelle Bewegung ist nur zu Fuß verfügbar';
+    if (distance > GEO.directTravelMaxM) return 'Direkte virtuelle Bewegung ist auf 2 km begrenzt';
+    return { points: [origin, target], speedMps: limitMps, direct: true };
+  }
   if (mode === 'fly') return { points: [origin, target], speedMps: limitMps };
   if (!endpoint) return 'Die Straßenrouten sind auf diesem Server nicht eingerichtet';
   const controller = new AbortController();
@@ -120,6 +126,7 @@ export function routeLength(points: GeoCoord[]) {
 
 export function validTrip(trip: SavedGeoTrip) {
   return !!trip && typeof trip.id === 'string' && isTravelMode(trip.mode) && validCoord(trip.target) &&
+    (trip.direct === undefined || (trip.direct === true && (trip.mode === 'walk' || trip.mode === 'run'))) &&
     between(trip.speedMps, Number.EPSILON, Infinity) && between(trip.progressM, 0, Infinity) &&
     (trip.startedAt === null || between(trip.startedAt, 0, Infinity)) &&
     Array.isArray(trip.points) && trip.points.length >= 2 && trip.points.length <= MAX_POINTS && trip.points.every(validCoord);

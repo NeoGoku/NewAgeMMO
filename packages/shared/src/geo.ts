@@ -7,23 +7,23 @@ export const GEO = {
   viewM: 1200, // Sichtradius für Objekte
   playerQuantDeg: 0.001, // andere Spieler nur auf ≈100 m gerundet sichtbar (Datenschutz)
   maxSpeed: { gps: 45, virtual: 30 } as Record<string, number>, // m/s Obergrenzen (Manipulationsschutz)
-  virtualSpeed: 14, // m/s virtuelles Laufen
   spawnBucketMs: 20 * 60e3, // Spawns rotieren alle 20 Minuten
   minPosIntervalMs: 900,
+  directTravelMaxM: 2000,
   steerTickMs: 100,
   steerTimeoutMs: 500,
 };
-export type GeoKind = 'mob' | 'node' | 'dungeon' | 'city' | 'house' | 'npc' | 'station' | 'poi' | 'teleporter';
+export type GeoKind = 'mob' | 'node' | 'dungeon' | 'city' | 'house' | 'npc' | 'station' | 'poi' | 'teleporter' | 'territory';
 export interface GeoObj { id: string; k: GeoKind; def: string; lat: number; lon: number; name: string; lvl?: number; fam?: string; role?: string; r?: number; extra?: any }
 export interface GeoPlayer { id: string; name: string; cls: string; lvl: number; lat: number; lon: number }
 export interface GeoCoord { lat: number; lon: number }
-export interface GeoRoute { id: string; points: GeoCoord[] }
+export interface GeoRoute { id: string; points: GeoCoord[]; direct?: true }
 export interface GeoRoutePreview extends GeoRoute {
   target: GeoCoord; mode: GeoTravelMode; totalM: number; etaSeconds: number; speedMps: number; label?: string;
 }
 export interface GeoTravelView {
   id: string; mode: GeoTravelMode; status: 'moving' | 'paused' | 'arrived';
-  target: GeoCoord; remainingM: number; totalM: number; etaSeconds: number;
+  target: GeoCoord; direct?: true; remainingM: number; totalM: number; etaSeconds: number;
 }
 export interface SavedGeoTrip extends GeoRoute {
   target: GeoCoord; mode: GeoTravelMode; speedMps: number; progressM: number; startedAt: number | null;
@@ -34,8 +34,8 @@ export interface GeoPosition {
   travel?: GeoTravelView | null; travelModes?: GeoTravelMode[];
 }
 /** Server→Client: geo{me,objs,players,rev}, geoMotion{position}, geoRoute{route}.
- * Client→Server: geoRoutePreview{lat,lon,mode}, geoRouteStart{lat,lon,mode,previewId?}, geoRoutePause{}, geoRouteResume{}, geoRouteCancel{}.
- * Other map controls: geoConsent{on,gps}, geoPos{lat,lon,acc,mode}, geoSteer{north,east}, geoInteract{id}, geoWipe{}. */
+ * Client→Server: geoRoutePreview{lat,lon,mode,direct?,refresh?}, geoRouteStart{lat,lon,mode,direct?,previewId?}, geoRoutePause{}, geoRouteResume{}, geoRouteCancel{}.
+ * Other map controls: geoConsent{on,gps}, geoPos{lat,lon,acc,mode}, geoSteer{north,east,mode?}, geoInteract{id}, geoWipe{}. */
 export const R_EARTH = 6371008.8;
 export const rad = (d: number) => d * Math.PI / 180;
 export const wrapLon = (longitude: number) => ((longitude + 180) % 360 + 360) % 360 - 180;

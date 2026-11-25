@@ -7,9 +7,10 @@
 - [implementiert] Smartphone-Paket mit acht dauerhaft gespeicherten Kartenstilen, GPS-Handshake, serverseitigem Touch-Joystick, regionalen Spawns, Questkarten-Tracking, Solo-Backup und überarbeitetem Audio.
 - [implementiert] P1: persistente OSM-Regionen in PostgreSQL/PostGIS und eine tägliche geografische Erkundungsquest.
 - [implementiert] Getrennte Kartentypen und Styles mit Vorschauen, gemeinsamer Bedienung und Migration bisheriger Einstellungen.
-- [implementiert] Straßenrouting mit Valhalla, Reisevorschau, Fahrzeugfreigaben und persistenter Reise. Der öffentliche Betrieb benötigt einen eingerichteten Routendienst.
-- [teilweise] Immobilienkatalog mit Braunschweig-Import, Kauf, Rückverkauf, Einrichtung und persönlicher Schnellreise. Datenbereitstellung, Vermietung, Baugrundstücke und weitere Immobilienarten stehen aus.
-- [offen] P1: Gebietskontrolle, weitere geografische Questtypen und Instanzen für Gruppen und Dungeons.
+- [implementiert] Valhalla-Routing mit erzwungener Neuberechnung, persistenter Reise und separater kurzer Luftlinienoption. Docker-Setup und Prüfung mit OSM-Straßendaten eingerichtet. Öffentliches Routing benötigt einen HTTPS-Host.
+- [teilweise] Braunschweig-Katalogimport mit Herkunfts- und Abdeckungsprüfung. Online ist regionaler OSM-Nachimport für Wohn- und Gewerbegebäude eingerichtet. Kauf, Rückverkauf, Einrichtung und persönliche Schnellreise nutzen persistente Eigentumsnachweise. Geografische Vermietung, Baugrundstücke und ALKIS stehen aus.
+- [implementiert] P1: geografische Feldnotizen und Patrouillen. Gilden können im Kolosseum und an der Moorwacht Gebiete halten und im gegenseitigen Gildenkrieg erobern.
+- [implementiert] P1: gemeinsame Dungeon-Instanzen an den drei vorhandenen Eingängen mit getrennten Kämpfen und täglichen Bossbelohnungen.
 
 1. [teilweise] Release-Signierung prüft den festen Zertifikatsfingerabdruck. Betreiber muss Key und Fingerabdruck in GitHub hinterlegen; erster Release und physisches Update bleiben zu prüfen.
 2. [offen] Docker-Compose + PostgreSQL-Lauf (`DATABASE_URL`) verifizieren, Migrationen testen.
@@ -27,4 +28,4 @@
 
 ## Map-First (aktuell)
 - [implementiert/geprüft] Karte als Hauptansicht, Ereignisleiste (5 Bereiche + Mehr), kompakte Charakteranzeige, eingeklappter Chat, Kampfskills nur im Kampf, Szenenwechsel per Server-Nachricht, NPCs/Werkstätten als Kartenobjekte mit Nähe-Interaktion.
-- [offen] Eroberbare Gebiete (Gilden-Territorien), Gilden-/Housing-Objekte aus realen Positionen, Geo-Quests, Dungeon-Betretung mit eigener Karten-Ansicht, Erprobung auf echtem Android-Gerät.
+- [offen] Weitere geografische Gilden- und Housing-Objekte, eigenständige Dungeon-Karten, Erprobung auf echtem Android-Gerät.

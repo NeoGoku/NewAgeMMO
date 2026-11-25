@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createCore, type SockLike } from '../src/core';
 import { MemoryStore } from '../src/store';
 import { G } from '../src/state';
+import { RegionalProperties } from '../src/geo-property-regions';
 import { PropertyCatalog } from '../src/geo-property-data';
 import { readPropertyCatalog } from '../src/property-file';
 
@@ -53,6 +54,17 @@ assert.throws(() => new PropertyCatalog({ ...catalog, features: [feature, featur
 assert.throws(() => new PropertyCatalog({
   ...catalog, features: [{ ...feature, geometry: { ...feature.geometry, coordinates: [square.map(([lon, lat]) => [lon + 1, lat])] } }],
 }), /keine gültigen Wohngebäude/);
+
+const regional = new RegionalProperties('https://example.invalid/overpass', async (_url, init) => {
+  assert.match(String(init?.body), /building/);
+  return Response.json({ generator: 'Overpass API test', elements: [{
+    type: 'way', id: 4556, tags: { building: 'commercial' },
+    geometry: square.map(([lon, lat]) => ({ lon: lon - 11, lat: lat - 1 })),
+  }] });
+});
+await regional.load(location.lat - 1, location.lon - 11);
+assert.equal(regional.at(location.lat - 1, location.lon - 11)?.buildings.get('property:osm:way:4556')?.building, 'commercial');
+assert.equal(regional.at(location.lat, location.lon), undefined);
 
 const directory = await mkdtemp(path.join(os.tmpdir(), 'nam-property-'));
 const filename = path.join(directory, 'braunschweig.geojson');

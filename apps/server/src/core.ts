@@ -1,3 +1,4 @@
+import { registerGuildTerritories, restoreTerritories, saveTerritoryChanges, tickTerritories } from './guild-territories';
 import { pendingReward, saveCharacter } from './character-save';
 import { configureProperties } from './geo-property-data';
 import { discardPropertyHouse, restorePropertyHouses } from './geo-property';
@@ -22,6 +23,8 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
   G.store = store; await G.store.init(); log('store', { kind: G.store.kind });
   for (const c of await G.store.all<any>('chars')) G.chars.set(c.id, c); for (const g of await G.store.all<any>('guilds')) G.guilds.set(g.id, g); for (const h of await G.store.all<any>('houses')) { G.houses.set(h.id, h); if (h.geo) G.store.geoUpsert?.('house:' + h.id, 'house', h.geo.lat, h.geo.lon, { owner: h.ownerName }); } for (const l of await G.store.all<any>('market')) G.market.set(l.id, l);
   restorePropertyHouses();
+  await restoreTerritories();
+  registerGuildTerritories();
   initWorld(); log('world', { locs: G.locs.size, chars: G.chars.size, guilds: G.guilds.size, houses: G.houses.size });
   const sessions = new WriteOrder();
   const accounts = new WriteOrder();
@@ -155,7 +158,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
     log('logout', { name: p.c.name, lvl: p.c.level });
   }
   const timers = [
-    setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, GEO.steerTickMs),
+    setInterval(() => { try { geoTick(); tickTerritories(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, GEO.steerTickMs),
     setInterval(() => { try { worldTick(); } catch (e: any) { log('tick_error', { e: String(e?.stack || e).slice(0, 400) }); } }, BAL.tickMs),
     setInterval(() => {
       for (const p of G.players.values()) {
@@ -175,6 +178,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
     stopping = true;
     timers.forEach(clearInterval);
     await messages.drain();
+    await saveTerritoryChanges();
     const results = await Promise.allSettled([...G.players.values()].map(p => sessions.run(p.id, () => logout(p))));
     await G.store.flush();
     const failure = results.find(result => result.status === 'rejected');

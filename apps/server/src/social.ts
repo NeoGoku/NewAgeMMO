@@ -3,7 +3,8 @@ import { ITEMS, LOCS } from '@nam/game-data';
 import { G, now, uid, send, sys, toLoc, type Player, type Guild, type Party } from './state';
 import { H } from './handlers';
 import { takeUid, giveInst, recalc } from './chars';
-import { guildLevel, canPvp } from './game';
+import { leaveDungeon } from './world';
+import { guildLevel, canPvp, locOf } from './game';
 const S = (v: any, n = 64) => (typeof v === 'string' ? v.slice(0, n) : '');
 const clean = (t: string) => t.replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 200);
 const find = (n: string) => G.byName.get(S(n, 16).toLowerCase());
@@ -11,7 +12,7 @@ const findOn = (n: string) => { const p = find(n); return p && p.online ? p : un
 // ---- Chat ----
 H.chat = (p, m) => {
   const text = clean(S(m.text, 300)); if (!text) return; if (now() - p.lastChat < 600) return 'Langsamer!'; p.lastChat = now(); const ch = S(m.ch, 8); const msg = { t: 'chat', ch, from: p.c.name, text, at: now(), cls: p.c.cls };
-  if (ch === 'local') { if (p.houseId) { for (const q of G.houseOcc.get(p.houseId) || []) send(q, msg); } else toLoc(G.locs.get(p.loc)!, msg); }
+  if (ch === 'local') { if (p.houseId) { for (const q of G.houseOcc.get(p.houseId) || []) send(q, msg); } else toLoc(locOf(p), msg); }
   else if (ch === 'party') { if (!p.partyId) return 'Keine Gruppe'; for (const id of G.parties.get(p.partyId)!.members) send(G.players.get(id), msg); }
   else if (ch === 'guild') { const g = p.c.guildId && G.guilds.get(p.c.guildId); if (!g) return 'Keine Gilde'; for (const id of Object.keys(g.members)) send(G.players.get(id), msg); }
   else if (ch === 'global') { if (now() - ((p as any).lastGlobal || 0) < 4000) return 'Weltchat: kurz warten'; (p as any).lastGlobal = now(); for (const q of G.players.values()) send(q, msg); }
@@ -30,7 +31,27 @@ const partySend = (pt: Party) => { const info = { t: 'partyInfo', id: pt.id, lea
 H.partyInvite = (p, m) => { const q = findOn(m.name); if (!q || q === p) return 'Spieler nicht online'; if (q.partyId) return 'Spieler ist bereits in einer Gruppe'; const pt = p.partyId ? G.parties.get(p.partyId) : null; if (pt && pt.leader !== p.id) return 'Nur der Anführer lädt ein'; if (pt && pt.members.length >= BAL.partyMax) return 'Gruppe voll (10)'; invite(p, q, 'party'); sys(p, `Einladung an ${q.c.name} gesendet.`); };
 H.partyAccept = (p, m) => { const inv = takeInvite(p, 'party', S(m.from)); if (!inv) return 'Einladung abgelaufen'; const o = G.players.get(inv.from); if (!o || !o.online) return 'Einlader offline'; if (p.partyId) return 'Du bist bereits in einer Gruppe'; let pt = o.partyId ? G.parties.get(o.partyId) : null; if (!pt) { pt = { id: uid('pt'), leader: o.id, members: [o.id], expMode: 'even' }; G.parties.set(pt.id, pt); o.partyId = pt.id; } if (pt.members.length >= BAL.partyMax) return 'Gruppe voll'; pt.members.push(p.id); p.partyId = pt.id; partySend(pt); sys(o, `${p.c.name} ist der Gruppe beigetreten.`, 'party'); };
 H.partyLeave = (p) => leaveParty(p);
-export function leaveParty(p: Player) { const pt = p.partyId ? G.parties.get(p.partyId) : null; if (!pt) return; pt.members = pt.members.filter(i => i !== p.id); p.partyId = null; send(p, { t: 'partyInfo', id: null }); if (pt.members.length < 2) { for (const id of pt.members) { const q = G.players.get(id); if (q) { q.partyId = null; send(q, { t: 'partyInfo', id: null }); } } G.parties.delete(pt.id); } else { if (pt.leader === p.id) pt.leader = pt.members[0]; partySend(pt); } }
+export function leaveParty(p: Player) {
+  leaveDungeon(p);
+  const party = p.partyId ? G.parties.get(p.partyId) : undefined;
+  if (!party) return;
+  party.members = party.members.filter(id => id !== p.id);
+  p.partyId = null;
+  send(p, { t: 'partyInfo', id: null });
+  if (party.members.length === 1) {
+    const member = G.players.get(party.members[0]);
+    if (member) {
+      leaveDungeon(member);
+      member.partyId = null;
+      send(member, { t: 'partyInfo', id: null });
+    }
+  }
+  if (party.members.length < 2) G.parties.delete(party.id);
+  else {
+    if (party.leader === p.id) party.leader = party.members[0];
+    partySend(party);
+  }
+}
 H.partyKick = (p, m) => { const pt = p.partyId ? G.parties.get(p.partyId) : null; if (!pt || pt.leader !== p.id) return 'Nur der Anführer'; const q = G.players.get(S(m.id)); if (!q || q.partyId !== pt.id || q === p) return 'Ungültig'; leaveParty(q); sys(q, 'Du wurdest aus der Gruppe entfernt.'); };
 H.partyExp = (p, m) => { const pt = p.partyId ? G.parties.get(p.partyId) : null; if (!pt || pt.leader !== p.id) return 'Nur der Anführer'; pt.expMode = m.mode === 'level' ? 'level' : 'even'; partySend(pt); };
 // ---- Gilden ----
@@ -58,8 +79,8 @@ export function guildWarCheck() { for (const g of G.guilds.values()) if (g.war &
 const tradeOf = (p: Player) => p.trade; const other = (t: NonNullable<Player['trade']>, p: Player) => G.players.get(t.a === p.id ? t.b : t.a)!;
 function tradeView(t: NonNullable<Player['trade']>) { const v = (id: string) => ({ name: G.chars.get(id)!.name, gold: t.offers[id].gold, items: t.offers[id].uids.map(u => G.players.get(id)!.c.inventory.find(i => i.uid === u)).filter(Boolean), ready: t.ready[id] }); return { t: 'trade', a: { id: t.a, ...v(t.a) }, b: { id: t.b, ...v(t.b) } }; }
 const tradeSync = (t: NonNullable<Player['trade']>) => { const v = tradeView(t); send(G.players.get(t.a), v); send(G.players.get(t.b), v); };
-H.tradeRequest = (p, m) => { const q = findOn(m.name); if (!q || q === p || q.loc !== p.loc) return 'Spieler nicht am Ort'; if (p.trade || q.trade) return 'Bereits im Handel'; invite(p, q, 'trade'); sys(p, 'Handelsanfrage gesendet.'); };
-H.tradeAccept = (p, m) => { const inv = takeInvite(p, 'trade', S(m.from)); if (!inv) return 'Anfrage abgelaufen'; const o = G.players.get(inv.from); if (!o || !o.online || o.loc !== p.loc || o.trade || p.trade) return 'Nicht möglich'; const t = { id: uid('t'), a: o.id, b: p.id, offers: { [o.id]: { gold: 0, uids: [] as string[] }, [p.id]: { gold: 0, uids: [] as string[] } }, ready: { [o.id]: false, [p.id]: false } }; o.trade = p.trade = t; tradeSync(t); };
+H.tradeRequest = (p, m) => { const q = findOn(m.name); if (!q || q === p || locOf(q) !== locOf(p)) return 'Spieler nicht am Ort'; if (p.trade || q.trade) return 'Bereits im Handel'; invite(p, q, 'trade'); sys(p, 'Handelsanfrage gesendet.'); };
+H.tradeAccept = (p, m) => { const inv = takeInvite(p, 'trade', S(m.from)); if (!inv) return 'Anfrage abgelaufen'; const o = G.players.get(inv.from); if (!o || !o.online || locOf(o) !== locOf(p) || o.trade || p.trade) return 'Nicht möglich'; const t = { id: uid('t'), a: o.id, b: p.id, offers: { [o.id]: { gold: 0, uids: [] as string[] }, [p.id]: { gold: 0, uids: [] as string[] } }, ready: { [o.id]: false, [p.id]: false } }; o.trade = p.trade = t; tradeSync(t); };
 H.tradeOffer = (p, m) => { const t = tradeOf(p); if (!t) return 'Kein Handel'; const gold = Math.max(0, Math.min(p.c.gold, Math.floor(Number(m.gold) || 0))); const uids = (Array.isArray(m.uids) ? m.uids : []).map((x: any) => S(x)).filter((u: string, i: number, a: string[]) => a.indexOf(u) === i && p.c.inventory.some(i => i.uid === u && ITEMS[i.id].tradable)).slice(0, 12); t.offers[p.id] = { gold, uids }; t.ready = { [t.a]: false, [t.b]: false }; tradeSync(t); };
 H.tradeConfirm = (p) => { const t = tradeOf(p); if (!t) return 'Kein Handel'; t.ready[p.id] = true; tradeSync(t); if (t.ready[t.a] && t.ready[t.b]) { const A = G.players.get(t.a)!, B = G.players.get(t.b)!; const oa = t.offers[A.id], ob = t.offers[B.id];
     const okSide = (X: Player, o: typeof oa) => X.c.gold >= o.gold && o.uids.every(u => X.c.inventory.some(i => i.uid === u)); if (!okSide(A, oa) || !okSide(B, ob)) { cancelTrade(t, 'Handel ungültig.'); return; }
@@ -68,6 +89,6 @@ H.tradeConfirm = (p) => { const t = tradeOf(p); if (!t) return 'Kein Handel'; t.
 export function cancelTrade(t: NonNullable<Player['trade']>, why = 'Handel abgebrochen.') { for (const id of [t.a, t.b]) { const q = G.players.get(id); if (q) { q.trade = null; send(q, { t: 'trade', done: true, cancelled: true }); sys(q, why); } } }
 H.tradeCancel = (p) => { if (p.trade) cancelTrade(p.trade); };
 // ---- Duell ----
-H.duel = (p, m) => { const q = findOn(m.name); if (!q || q === p || q.loc !== p.loc) return 'Spieler nicht am Ort'; if (LOCS[p.loc].safe && LOCS[p.loc].kind !== 'city') { /* erlaubt */ } if (p.duel || q.duel) return 'Bereits im Duell'; if (p.dead || q.dead) return 'Nicht möglich'; invite(p, q, 'duel'); sys(p, 'Duellanfrage gesendet.'); };
-H.duelAccept = (p, m) => { const inv = takeInvite(p, 'duel', S(m.from)); if (!inv) return 'Anfrage abgelaufen'; const o = G.players.get(inv.from); if (!o || !o.online || o.loc !== p.loc || o.duel || p.duel) return 'Nicht möglich'; const until = now() + 5 * 60e3; o.duel = { opp: p.id, until }; p.duel = { opp: o.id, until }; for (const x of [o, p]) { recalc(x); x.c.hp = x.pvpSt!.maxHp; x.c.res = x.pvpSt!.maxRes; x.target = x === o ? p.id : o.id; x.auto = true; sys(x, '⚔ Duell! Werte sind normalisiert. Viel Erfolg!', 'boss'); } };
+H.duel = (p, m) => { const q = findOn(m.name); if (!q || q === p || locOf(q) !== locOf(p)) return 'Spieler nicht am Ort'; if (LOCS[p.loc].safe && LOCS[p.loc].kind !== 'city') { /* erlaubt */ } if (p.dungeon || q.dungeon) return 'Duell in einer Gruppeninstanz nicht möglich'; if (p.duel || q.duel) return 'Bereits im Duell'; if (p.dead || q.dead) return 'Nicht möglich'; invite(p, q, 'duel'); sys(p, 'Duellanfrage gesendet.'); };
+H.duelAccept = (p, m) => { const inv = takeInvite(p, 'duel', S(m.from)); if (!inv) return 'Anfrage abgelaufen'; const o = G.players.get(inv.from); if (!o || !o.online || locOf(o) !== locOf(p) || o.dungeon || p.dungeon || o.duel || p.duel) return 'Nicht möglich'; const until = now() + 5 * 60e3; o.duel = { opp: p.id, until }; p.duel = { opp: o.id, until }; for (const x of [o, p]) { recalc(x); x.c.hp = x.pvpSt!.maxHp; x.c.res = x.pvpSt!.maxRes; x.target = x === o ? p.id : o.id; x.auto = true; sys(x, '⚔ Duell! Werte sind normalisiert. Viel Erfolg!', 'boss'); } };
 void canPvp;

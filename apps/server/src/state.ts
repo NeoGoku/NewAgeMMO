@@ -1,5 +1,5 @@
 import type { SockLike } from './core';
-import type { Character, ItemInst, EvtView, GeoCoord, GeoRoutePreview } from '@nam/shared';
+import type { Character, ItemInst, EvtView, GeoCoord, GeoRoutePreview, GeoSteerMode } from '@nam/shared';
 import type { Derived } from '@nam/shared';
 import type { MobDef, LocDef } from '@nam/game-data';
 import type { Store } from './store';
@@ -11,27 +11,29 @@ export interface Player {
   partyId: string | null; combatUntil: number; travel: { to: string; until: number; from: string } | null; gather: { uid: string; until: number } | null; pending: { kind: 'gather' | 'crate'; uid: string } | null;
   emote?: { k: string; until: number }; rid: number; tokens: number; tokAt: number; summons: { kind: string; until: number; next: number; pow: number }[]; dead: boolean; deadUntil: number;
   st: Derived; pvpSt: Derived | null; mods: any; duel: { opp: string; until: number } | null; trade: Trade | null; lastChat: number; evq: EvtView[]; petAt: number; hits: number; resAcc: number;
-  houseId: string | null; houseFloor: number; online: boolean; shield: number; lastMsgSec: number; stunnedUntil: number; invites: { kind: string; from: string; until: number; data?: any }[]; dirty: boolean; lastAct: number; geo?: GeoState; inScene?: boolean; mapEncounter?: MapEncounter;
+  houseId: string | null; houseFloor: number; online: boolean; shield: number; lastMsgSec: number; stunnedUntil: number; invites: { kind: string; from: string; until: number; data?: any }[]; dirty: boolean; lastAct: number; geo?: GeoState; inScene?: boolean; mapEncounter?: MapEncounter; dungeon?: DungeonVisit;
 }
 export interface GeoState {
   on: boolean; gps: boolean; visible: boolean; lat: number; lon: number; has: boolean; regionLabel: string;
-  steer: { north: number; east: number; until: number } | null; motionAt: number;
+  steer: { north: number; east: number; until: number; mode: GeoSteerMode } | null; motionAt: number;
   tripProgress: number; routePlanning?: boolean; routeLimit?: { tokens: number; at: number };
   preview?: { from: GeoCoord; expires: number; route: GeoRoutePreview };
   fix?: { lat: number; lon: number; at: number; rounded?: boolean }; strikes: number[]; lockUntil: number;
   flags: string[]; lastPush: number; visited: Set<string>;
 }
 export interface Trade { id: string; a: string; b: string; offers: Record<string, { gold: number; uids: string[] }>; ready: Record<string, boolean> }
-export interface MapEncounter { origin: string; target: string; finish: () => void }
-export interface Mob { uid: string; def: MobDef; hp: number; maxHp: number; x: number; y: number; hx: number; hy: number; threat: Record<string, number>; dmg: Record<string, number>; target: string | null; atkAt: number; tick: number; fx: Fx[]; phase: number; dead: boolean; respawnAt: number; add: boolean; enrage: number; lastHit: number; skills: MobDef['skills']; lvl: number; flashT: number; mapEncounter?: MapEncounter }
+export interface MapEncounter { origin: string; target: string; mobPosition: GeoCoord; finish: () => void }
+export interface Mob { uid: string; def: MobDef; hp: number; maxHp: number; x: number; y: number; hx: number; hy: number; threat: Record<string, number>; dmg: Record<string, number>; target: string | null; atkAt: number; tick: number; fx: Fx[]; phase: number; dead: boolean; respawnAt: number; add: boolean; enrage: number; lastHit: number; skills: MobDef['skills']; lvl: number; flashT: number; mapEncounter?: MapEncounter; dungeon?: DungeonState }
 export interface NodeS { uid: string; def: string; x: number; y: number; ready: boolean; respawnAt: number; hp: number }
 export interface LocState { id: string; def: LocDef; players: Set<Player>; mobs: Mob[]; nodes: NodeS[]; weather: string; weatherUntil: number; evts: EvtView[]; bossText: string[] }
+export interface DungeonState extends LocState { key: string }
+export interface DungeonVisit { dungeon: DungeonState; origin: string; x: number; y: number }
 export interface Party { id: string; leader: string; members: string[]; expMode: 'even' | 'level' }
 export interface Guild { id: string; name: string; tag: string; leader: string; created: number; level: number; exp: number; gold: number; members: Record<string, { name: string; rank: number; joined: number; contrib: number }>; bank: ItemInst[]; skills: Record<string, number>; war: { vs: string; vsName: string; until: number; score: number; theirScore: number } | null; houseId: string | null; motd: string; quest: { id: string; prog: number; day: number } }
 export interface House { id: string; kind: 'player' | 'guild'; ownerId: string; ownerName: string; slot: number; style: string; floors: number; furniture: { id: string; furn: string; x: number; y: number; rot: number; floor: number }[]; visit: 'all' | 'friends' | 'private'; stash: ItemInst[]; garden: { plantedAt: number } | null; rent?: { tenant: string; tenantName: string; price: number; until: number } | null; created: number; geo?: { lat: number; lon: number }; propertyId?: string }
 export interface Listing { id: string; kind: 'ah' | 'stall' | 'order'; seller: string; sellerName: string; item?: ItemInst; price: number; expires: number; want?: { id: string; qty: number }; created: number }
 export const G = {
-  store: null as unknown as Store, players: new Map<string, Player>(), byName: new Map<string, Player>(), locs: new Map<string, LocState>(), parties: new Map<string, Party>(), guilds: new Map<string, Guild>(),
+  store: null as unknown as Store, players: new Map<string, Player>(), byName: new Map<string, Player>(), locs: new Map<string, LocState>(), dungeons: new Map<string, DungeonState>(), parties: new Map<string, Party>(), guilds: new Map<string, Guild>(),
   houses: new Map<string, House>(), geoTaken: new Map<string, number>(), houseOcc: new Map<string, Set<Player>>(), market: new Map<string, Listing>(), chars: new Map<string, Character>(), tradeSeq: 0, startedAt: Date.now(), stats: { msgs: 0, ticks: 0, tickMs: 0, saves: 0 },
 };
 export const now = () => Date.now();

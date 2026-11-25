@@ -2,6 +2,7 @@ import { BAL, GEO, PROPERTY_REGION, haversine, validPropertyId, type Character, 
 import { saveCharacter } from './character-save';
 import { moveToOwnedProperty, pushGeo } from './geo';
 import { propertyCatalog } from './geo-property-data';
+import { findProperty, loadRegionalProperties, nearbyPropertyCatalog, regionalPropertyStatus } from './geo-property-regions';
 import { H, NO_CHAR } from './handlers';
 import { G, now, uid, type House, type Player } from './state';
 
@@ -75,17 +76,28 @@ function offerFor(p: Player, building: GeoPropertyBuilding, detailed = false): G
 }
 
 NO_CHAR.add('geoPropertyList');
-H.geoPropertyList = (p, m) => {
+H.geoPropertyList = async (p, m) => {
   const catalog = propertyCatalog();
   if (m.id !== undefined && !validPropertyId(m.id)) return 'Ungültige Immobilie';
   const mine = p.c.geoProperty?.building;
-  const requested = m.id === mine?.id ? mine : catalog.buildings.get(m.id);
-  if (m.id && !requested) return 'Immobilie nicht im Katalog';
   const g = p.geo;
-  const buildings = requested ? [requested] : g?.on && g.has ? catalog.nearby(g.lat, g.lon).map(entry => entry.building) : [];
+  const location = g?.on && g.has ? { lat: g.lat, lon: g.lon } : undefined;
+  const seeded = location && catalog.nearby(location.lat, location.lon).length > 0;
+  if (location && !seeded && !m.id) {
+    await loadRegionalProperties(location.lat, location.lon);
+    pushGeo(p);
+  }
+  const claimed = m.id ? houseFor(m.id) : undefined;
+  const requested = !m.id ? undefined : (claimed && propertyPosition(claimed)) ??
+    (location ? findProperty(m.id, location.lat, location.lon) : catalog.buildings.get(m.id));
+  if (m.id && !requested) return 'Immobilie nicht im Katalog';
+  const buildings = requested ? [requested] : location ?
+    nearbyPropertyCatalog(location.lat, location.lon).map(entry => entry.building) : [];
   if (mine && !m.id && !buildings.some(b => b.id === mine.id)) buildings.unshift(mine);
-  return { list: buildings.map(building => offerFor(p, building, !!requested)), region: PROPERTY_REGION, snapshot: catalog.osmSnapshot,
-    activePosition: !!(g?.on && g.has), virtual: !!(g?.on && g.has && !g.gps), hasHome: !!p.c.houseId };
+  return { list: buildings.map(building => offerFor(p, building, !!requested)),
+    region: seeded ? PROPERTY_REGION : 'In deiner Region', snapshot: seeded ? catalog.osmSnapshot : undefined,
+    regionalStatus: location ? regionalPropertyStatus(location.lat, location.lon) : undefined,
+    activePosition: !!location, virtual: !!(location && !g?.gps), hasHome: !!p.c.houseId };
 };
 
 async function saveOwnership(p: Player, rollback: () => void) {
@@ -100,7 +112,8 @@ async function saveOwnership(p: Player, rollback: () => void) {
 }
 
 H.geoPropertyBuy = async (p, m) => {
-  const building = validPropertyId(m.id) ? propertyCatalog().buildings.get(m.id) : undefined;
+  const g = p.geo;
+  const building = g?.on && g.has && validPropertyId(m.id) ? findProperty(m.id, g.lat, g.lon) : undefined;
   if (!building) return 'Immobilie nicht im Katalog';
   const error = propertyAccess(p, building);
   if (error) return error;

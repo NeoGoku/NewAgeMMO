@@ -23,10 +23,11 @@ export function MapDesignMenu({ value, onType, onStyle, onClose, children }: {
       </div> : <>
         <div className="map-previews">
           {MAP_STYLES.map(style => <button key={style.id} type="button" aria-pressed={value.style === style.id} className={value.style === style.id ? 'on' : ''} onClick={() => onStyle(style.id)}>
-            <img src={previews.get(style.id)} alt="" width={180} height={85} />
+            <img src={previews.get(style.id)} alt="" width={180} height={85} loading="lazy" />
             <span>{style.label}</span>
           </button>)}
         </div>
+        <small>Kartenausschnitt Monaco · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap-Mitwirkende</a></small>
         {value.style && <button type="button" className="reset-theme" onClick={() => onStyle(null)}>Basisfarben verwenden</button>}
       </>}
     </div>

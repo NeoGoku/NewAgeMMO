@@ -2,8 +2,9 @@ export const PROPERTY_SOURCE = 'OpenStreetMap';
 export const PROPERTY_REGION = 'Braunschweig';
 export const PROPERTY_BOUNDS = [52.22, 10.455, 52.297, 10.57] as const;
 export const RESIDENTIAL_BUILDINGS = ['apartments', 'detached', 'house', 'residential', 'semidetached_house', 'terrace', 'bungalow', 'dormitory'] as const;
-export const residentialBuilding = (name: unknown): name is typeof RESIDENTIAL_BUILDINGS[number] =>
-  RESIDENTIAL_BUILDINGS.some(building => building === name);
+export const PROPERTY_BUILDINGS = [...RESIDENTIAL_BUILDINGS, 'commercial', 'retail', 'office'] as const;
+export const supportedPropertyBuilding = (name: unknown): name is typeof PROPERTY_BUILDINGS[number] =>
+  PROPERTY_BUILDINGS.some(building => building === name);
 
 export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding }
 
@@ -15,7 +16,7 @@ export type GeoPropertyFootprint = { type: 'Polygon'; coordinates: PropertyPolyg
 export interface GeoPropertyBuilding {
   id: string;
   osmId: string;
-  building: typeof RESIDENTIAL_BUILDINGS[number];
+  building: typeof PROPERTY_BUILDINGS[number];
   lat: number;
   lon: number;
   footprintM2: number;
@@ -43,33 +44,39 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const positiveInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
-const [south, west, north, east] = PROPERTY_BOUNDS;
-const inRegion = (lon: unknown, lat: unknown) =>
-  typeof lat === 'number' && lat >= south && lat <= north && typeof lon === 'number' && lon >= west && lon <= east;
+const validPosition = (lon: unknown, lat: unknown) =>
+  typeof lat === 'number' && lat >= -85 && lat <= 85 && typeof lon === 'number' && lon >= -180 && lon <= 180;
 
 export function validPropertyFootprint(value: unknown): value is GeoPropertyFootprint {
   if (!record(value)) return false;
   const polygons = value.type === 'Polygon' ? [value.coordinates] : value.type === 'MultiPolygon' ? value.coordinates : null;
   if (!Array.isArray(polygons) || !polygons.length || polygons.length > 20) return false;
   let vertices = 0;
+  let south = 85, west = 180, north = -85, east = -180;
   for (const polygon of polygons) {
     if (!Array.isArray(polygon) || !polygon.length || polygon.length > 40) return false;
     for (const ring of polygon) {
       if (!Array.isArray(ring) || ring.length < 4 || (vertices += ring.length) > 512 ||
-        !ring.every(pt => Array.isArray(pt) && pt.length === 2 && inRegion(pt[0], pt[1]))) return false;
+        !ring.every(pt => Array.isArray(pt) && pt.length === 2 && validPosition(pt[0], pt[1]))) return false;
+      for (const [lon, lat] of ring) {
+        south = Math.min(south, lat);
+        west = Math.min(west, lon);
+        north = Math.max(north, lat);
+        east = Math.max(east, lon);
+      }
       const first = ring[0], last = ring[ring.length - 1];
       if (first[0] !== last[0] || first[1] !== last[1]) return false;
     }
   }
-  return true;
+  return north - south <= .03 && east - west <= .15;
 }
 
 export function validPropertyOwnership(value: unknown): value is GeoPropertyOwnership {
   if (!record(value) || !validPropertyId(value.id) || !positiveInt(value.purchaseGold) || !record(value.building)) return false;
   const building = value.building;
   return building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
-    residentialBuilding(building.building) && positiveInt(building.footprintM2) && positiveInt(building.levels) &&
+    supportedPropertyBuilding(building.building) && positiveInt(building.footprintM2) && positiveInt(building.levels) &&
     building.floorAreaM2 === building.footprintM2 * building.levels && positiveInt(building.estimatedRooms) &&
     typeof building.levelsEstimated === 'boolean' && building.buyGold === value.purchaseGold &&
-    inRegion(building.lon, building.lat) && validPropertyFootprint(building.footprint);
+    validPosition(building.lon, building.lat) && validPropertyFootprint(building.footprint);
 }

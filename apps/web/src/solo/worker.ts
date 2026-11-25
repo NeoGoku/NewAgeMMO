@@ -21,10 +21,11 @@ async function open() {
       if (sock.readyState !== 1) return;
       const store = new IdbStore();
       try {
-        const catalogUrl = import.meta.env.VITE_PROPERTY_CATALOG_URL;
+        const catalogUrl = import.meta.env.VITE_PROPERTY_CATALOG_URL || import.meta.env.VITE_BUNDLED_PROPERTY_CATALOG_URL;
         let propertyCatalog: unknown;
         if (catalogUrl) {
-          const url = new URL(catalogUrl, new URL(import.meta.env.BASE_URL, worker.location.origin));
+          const buildRoot = new URL(import.meta.env.BASE_URL, new URL('../', worker.location.href));
+          const url = new URL(catalogUrl, buildRoot);
           if (url.origin !== worker.location.origin) throw new Error('Der Solo-Immobilienkatalog muss vom selben Web-Ursprung stammen.');
           try {
             const response = await fetch(url, { signal: AbortSignal.timeout(4000), credentials: 'same-origin', redirect: 'error' });

@@ -9,16 +9,33 @@ export const BAL = {
   dayLengthMs: 24 * 60e3, weatherMs: 4 * 60e3, resetStonePrice: 0, auctionFee: 0.05, guildCreateCost: 5000, guildMax: 50,
   houseCost: 2500, propertyGoldPerM2: 10, propertyM2PerRoom: 28, propertyMaxGold: 90000, propertyResaleRate: .75, floorCost: 8000, repairPerPoint: 0.6,
 };
+export const GUILD_TERRITORY = {
+  holdMs: 30_000,
+  recaptureMs: 60 * 60_000,
+  gpsFreshMs: 30_000,
+} as const;
+
 export const GEO_TRAVEL_MODES = {
-  walk: { label: 'Gehen', speedMps: 2.5, level: 1 },
-  run: { label: 'Laufen', speedMps: 7, level: 1 },
-  bike: { label: 'Fahrrad', speedMps: 12, level: 5 },
-  mount: { label: 'Reittier', speedMps: 18, level: 15 },
+  walk: { label: 'Gehen', speedMps: 5 / 3.6, level: 1 },
+  run: { label: 'Laufen', speedMps: 10 / 3.6, level: 1 },
+  bike: { label: 'Fahrrad', speedMps: 20 / 3.6, level: 5 },
+  mount: { label: 'Reittier', speedMps: 25 / 3.6, level: 15 },
   motorbike: { label: 'Motorrad', speedMps: 26, level: 25 },
   car: { label: 'Auto', speedMps: 34, level: 40 },
   fly: { label: 'Fliegen', speedMps: 45, level: 60 },
 } as const;
 export type GeoTravelMode = keyof typeof GEO_TRAVEL_MODES;
+export const GEO_STEER_MODES = ['walk', 'run', 'bike', 'mount'] as const;
+export type GeoSteerMode = typeof GEO_STEER_MODES[number];
+const mountedSpeeds = new Map([
+  ['mount_horse', 30 / 3.6],
+  ['mount_wolf', 35 / 3.6],
+  ['mount_drake', 40 / 3.6],
+]);
+export function geoTravelSpeed(mode: GeoTravelMode, mount?: string) {
+  if (mode === 'mount' && mount) return mountedSpeeds.get(mount) ?? GEO_TRAVEL_MODES.mount.speedMps;
+  return GEO_TRAVEL_MODES[mode].speedMps;
+}
 export const expToNext = (lv: number) => Math.floor(BAL.expBase * Math.pow(lv, BAL.expExp));
 export const bonusPointCost = (n: number) => Math.floor(BAL.bonusBase * Math.pow(BAL.bonusGrowth, n));
 export interface ClassBase { attrs: Attrs; atkAttr: Attr[]; res: string; resMax: number; resRegen: number; melee: boolean; blockBase: number; hpMult: number }

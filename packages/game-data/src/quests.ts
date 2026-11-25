@@ -1,7 +1,7 @@
 import { CLASS_IDS } from '@nam/shared';
 import { PROFS } from './professions';
 import { CLASSES } from './classes';
-export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'|'region'; t: string; n: number; label?: string }
+export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'|'region'|'survey'|'regional_hunt'; t: string; n: number; label?: string }
 export interface Reward { exp?: number; gold?: number; items?: { id: string; qty: number; rar?: number }[]; rep?: Record<string, number>; train?: number; stat?: number }
 export interface QuestDef { id: string; name: string; type: 'main'|'side'|'daily'|'class'|'prof'|'hidden'|'event'; giver: string; turnin: string; lvl: number; prereq?: string; desc: string; offer: string; done: string; goals: Goal[]; reward: Reward; choice?: { text: string; options: { id: string; label: string; rep: Record<string, number> }[] }; autoStart?: string; repeat?: 'daily'; scale?: boolean; give?: { id: string; qty: number } }
 export const FACTIONS: Record<string, string> = { rat: 'Magierrat', syndikat: 'Schattensyndikat', union: 'Technikerunion' };
@@ -52,6 +52,18 @@ Q({
   lvl: 1, repeat: 'daily',
   desc: 'Erreiche das markierte Gebiet in deiner Umgebung. Prozedurale Gebiete sind nur im virtuellen Modus aktiv.',
   goals: [g('region', '*', 1, 'Erkundungsgebiet erreichen')], reward: { exp: 25, gold: 30, train: 30 }
+});
+Q({
+  id: 'd_regional_survey', name: 'Täglich: Feldnotizen', type: 'daily', giver: 'mira', turnin: 'mira',
+  lvl: 1, repeat: 'daily',
+  desc: 'Erreiche den markierten Ort, wähle die Quest auf der Karte und nimm Feldnotizen auf. Im GPS-Modus benötigst du einen öffentlichen Kartenort in der Nähe.',
+  goals: [g('survey', '*', 1, 'Feldnotizen aufnehmen')], reward: { exp: 35, gold: 45, train: 40 }
+});
+Q({
+  id: 'd_regional_hunt', name: 'Täglich: Patrouille in der Region', type: 'daily', giver: 'mira', turnin: 'mira',
+  lvl: 1, repeat: 'daily',
+  desc: 'Besiege einen gewöhnlichen Gegner von der Karte im markierten Gebiet. Öffne die Begegnung über seinen Kartenmarker.',
+  goals: [g('regional_hunt', '*', 1, 'Gegner im Zielgebiet besiegen')], reward: { exp: 60, gold: 55, train: 35 }
 });
 Q({ id: 'd_kill', name: 'Täglich: Monsterjagd', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Besiege 20 beliebige Gegner.', goals: [g('kill', '*', 20)], reward: {} });
 Q({ id: 'd_gather', name: 'Täglich: Sammler', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Sammle 10 Ressourcen.', goals: [g('gather', '*', 10)], reward: { train: 80 } });

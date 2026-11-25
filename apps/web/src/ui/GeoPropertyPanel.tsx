@@ -8,6 +8,7 @@ import { fmt, Win } from './kit';
 
 interface Catalog {
   region: string;
+  regionalStatus?: 'disabled' | 'unavailable' | 'ready';
   snapshot?: string;
   activePosition: boolean;
   virtual: boolean;
@@ -17,7 +18,7 @@ interface Catalog {
 
 const buildingNames: Record<string, string> = {
   apartments: 'Mehrfamilienhaus', detached: 'Einfamilienhaus', house: 'Haus', residential: 'Wohngebäude',
-  semidetached_house: 'Doppelhaushälfte', terrace: 'Reihenhaus', bungalow: 'Bungalow', dormitory: 'Wohnheim',
+  semidetached_house: 'Doppelhaushälfte', terrace: 'Reihenhaus', bungalow: 'Bungalow', dormitory: 'Wohnheim', commercial: 'Gewerbeimmobilie', retail: 'Ladenlokal', office: 'Bürogebäude',
 };
 const inRange = (property: GeoPropertyOffer) => property.distanceM !== undefined && property.distanceM <= GEO.interactM;
 
@@ -92,7 +93,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
 
   return <Win title="Immobilien" icon="⌂" w={610} onClose={() => set({ panel: null })}>
     <div className="row wrap">
-      <strong className="grow">{catalog?.region ?? 'Braunschweig'}</strong>
+      <strong className="grow">{catalog?.region ?? 'In deiner Region'}</strong>
       {id && <button className="btn sm" onClick={() => set({ selected: null })}>Übersicht</button>}
       <button className="btn sm" disabled={busy} onClick={refresh}>Aktualisieren</button>
       <button className="btn sm" onClick={() => { void call('houseList'); set({ panel: 'houses', selected: null }); }}>Parzellen</button>
@@ -114,8 +115,10 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
     </details>}
     {error ? <p className="err" role="alert">{error}</p> : !catalog ? <p role="status">Immobilien werden geladen …</p> : <>
       {!displayed.length && <p className="dim">
-        {tab === 'travel' ? 'Dein Charakter hat noch keinen Immobilien-Schnellreisepunkt.' : catalog.list.length ? 'Keine Immobilien passen zu diesen Filtern.' : !catalog.snapshot ? 'Für Braunschweig ist auf diesem Server kein Gebäudekatalog geladen.' :
+        {tab === 'travel' ? 'Dein Charakter hat noch keinen Immobilien-Schnellreisepunkt.' : catalog.list.length ? 'Keine Immobilien passen zu diesen Filtern.' :
           !catalog.activePosition ? 'Aktiviere einen Standort auf der Karte, um Immobilien in der Nähe zu sehen.' :
+          !catalog.snapshot && catalog.regionalStatus === 'disabled' ? 'Live-Import ist auf diesem Server nicht eingerichtet.' :
+          !catalog.snapshot && catalog.regionalStatus === 'unavailable' ? 'Der regionale Gebäudekatalog ist vorübergehend nicht erreichbar. Versuche es später erneut.' :
             'Im Umkreis deiner Position sind keine Immobilien im Katalog.'}
       </p>}
       <div className="col scroll" style={{ maxHeight: '55vh' }}>{displayed.map(property => {

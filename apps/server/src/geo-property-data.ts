@@ -1,4 +1,4 @@
-import { BAL, GEO, PROPERTY_SOURCE, PROPERTY_REGION, PROPERTY_BOUNDS, R_EARTH, haversine, rad, residentialBuilding, validPropertyFootprint, type GeoObj, type GeoPropertyBuilding } from '@nam/shared';
+import { BAL, GEO, PROPERTY_SOURCE, PROPERTY_REGION, PROPERTY_BOUNDS, R_EARTH, haversine, rad, supportedPropertyBuilding, validPropertyFootprint, type GeoPropertyBuilding } from '@nam/shared';
 
 export const PROPERTY_CATALOG_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_FEATURES = 1000;
@@ -7,11 +7,11 @@ const MAX_NEARBY = 32;
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const [south, west, north, east] = PROPERTY_BOUNDS;
 const metersPerDegLat = R_EARTH * rad(1);
-const metersPerDegLon = metersPerDegLat * Math.cos(rad((south + north) / 2));
+const regionMetersPerDegLon = metersPerDegLat * Math.cos(rad((south + north) / 2));
 const rounded = (n: number) => Number(n.toFixed(7));
 
-function ring(input: [number, number][]) {
-  const points = input.map(([lon, lat]) => [(lon - west) * metersPerDegLon, (lat - south) * metersPerDegLat]);
+function ring(input: [number, number][], originLon: number, originLat: number, metersPerDegLon: number) {
+  const points = input.map(([lon, lat]) => [(lon - originLon) * metersPerDegLon, (lat - originLat) * metersPerDegLat]);
   let crossSum = 0, momentY = 0;
   for (let i = 1; i < points.length; i++) {
     const [ax, ay] = points[i - 1], [bx, by] = points[i];
@@ -24,12 +24,14 @@ function ring(input: [number, number][]) {
 }
 
 function polygon(input: [number, number][][]) {
-  const outer = ring(input[0]);
+  const [originLon, originLat] = input[0][0];
+  const metersPerDegLon = metersPerDegLat * Math.cos(rad(originLat));
+  const outer = ring(input[0], originLon, originLat, metersPerDegLon);
   if (!outer) return;
   let { area } = outer;
   const rings = [outer.points];
   for (const inner of input.slice(1)) {
-    const hole = ring(inner);
+    const hole = ring(inner, originLon, originLat, metersPerDegLon);
     if (!hole) return;
     area -= hole.area;
     rings.push(hole.points);
@@ -53,15 +55,15 @@ function polygon(input: [number, number][][]) {
     x = (intersections[i + 1] + intersections[i]) / 2;
     anchorY = y;
   }
-  return { area, lat: rounded(south + anchorY / metersPerDegLat), lon: rounded(west + x / metersPerDegLon) };
+  return { area, lat: rounded(originLat + anchorY / metersPerDegLat), lon: rounded(originLon + x / metersPerDegLon) };
 }
 
-function parseBuilding(raw: unknown): GeoPropertyBuilding | undefined {
+export function parsePropertyBuilding(raw: unknown): GeoPropertyBuilding | undefined {
   if (!record(raw) || raw.type !== 'Feature' || !record(raw.properties) || !record(raw.geometry)) return;
   const osmId = raw.id ?? raw.properties['@id'];
   if (typeof osmId !== 'string' || !/^(way|relation)\/[1-9]\d{0,14}$/.test(osmId)) return;
   const building = raw.properties.building;
-  if (!residentialBuilding(building)) return;
+  if (!supportedPropertyBuilding(building)) return;
   const { type, coordinates } = raw.geometry;
   const footprint = { type, coordinates };
   if (!validPropertyFootprint(footprint)) return;
@@ -95,9 +97,12 @@ export class PropertyCatalog {
     }
     this.osmSnapshot = input.osmSnapshot;
     for (const feature of input.features) {
-      const building = parseBuilding(feature);
+      const building = parsePropertyBuilding(feature);
       // OSM geometries crossing the configured region and unsupported structures are excluded.
       if (!building) continue;
+      const { footprint } = building;
+      const parts = footprint.type === 'Polygon' ? [footprint.coordinates] : footprint.coordinates;
+      if (parts.some(part => part.some(ring => ring.some(([lon, lat]) => lat < south || lat > north || lon < west || lon > east)))) continue;
       if (this.buildings.has(building.id)) throw new Error('Doppeltes OSM-Gebäude: ' + building.osmId);
       this.buildings.set(building.id, building);
     }
@@ -106,19 +111,16 @@ export class PropertyCatalog {
 
   nearby(lat: number, lon: number, radius = GEO.viewM) {
     if (lat < south - radius / metersPerDegLat || lat > north + radius / metersPerDegLat ||
-      lon < west - radius / metersPerDegLon || lon > east + radius / metersPerDegLon) return [];
-    return [...this.buildings.values()].map(building => ({ building, distance: haversine(lat, lon, building.lat, building.lon) }))
-      .filter(entry => entry.distance <= radius).sort((a, b) => a.distance - b.distance).slice(0, MAX_NEARBY);
+      lon < west - radius / regionMetersPerDegLon || lon > east + radius / regionMetersPerDegLon) return [];
+    return nearbyBuildings(this.buildings.values(), lat, lon, radius);
   }
+}
+
+export function nearbyBuildings(buildings: Iterable<GeoPropertyBuilding>, lat: number, lon: number, radius: number) {
+  return Array.from(buildings, building => ({ building, distance: haversine(lat, lon, building.lat, building.lon) }))
+    .filter(entry => entry.distance <= radius).sort((a, b) => a.distance - b.distance).slice(0, MAX_NEARBY);
 }
 
 let properties = new PropertyCatalog();
 export const configureProperties = (input?: unknown) => { properties = new PropertyCatalog(input); };
 export const propertyCatalog = () => properties;
-export function propertyObjects(lat: number, lon: number, radius: number): GeoObj[] {
-  return properties.nearby(lat, lon, radius).map(({ building }) => ({
-    id: building.id, k: 'house', def: 'property', lat: building.lat, lon: building.lon,
-    name: 'Immobilie · ' + PROPERTY_REGION,
-    extra: { source: PROPERTY_SOURCE },
-  }));
-}

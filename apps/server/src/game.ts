@@ -1,9 +1,10 @@
+import { finishTravel, leaveDungeon } from './world';
 import { publishProgress } from './character-save';
 import { BAL, mitig, type EvtView, type Rarity, type ItemInst, CLASS_BASE, RARITY_MULT } from '@nam/shared';
 import { LOCS, MOBS, NODES, SKILLS, SPECIES, WEATHER, ITEMS, CLASSES, SUMMON_STATS, QUESTS, EGG_SPECIES_BY_FAMILY, petExp, type MobDef, type SkillDef, type NodeDef } from '@nam/game-data';
-import { G, now, rnd, rint, clamp, dist, uid, send, sys, toLoc, type Player, type Mob, type LocState, type Fx, type NodeS } from './state';
+import { G, now, rnd, rint, clamp, dist, uid, send, sys, toLoc, type Player, type Mob, type LocState, type Fx, type NodeS, type DungeonState } from './state';
 import { invAdd, recalc, curSt, gainExp, mkItem, rollRarity, isEquip, addTrainExp } from './chars';
-import { questEvent } from './quests';
+import { questEvent, recordRegionalHunt } from './quests';
 const Y0 = 52, Y1 = 94;
 export function initWorld() {
   for (const def of Object.values(LOCS)) {
@@ -13,9 +14,15 @@ export function initWorld() {
     G.locs.set(def.id, l);
   }
 }
+export function newDungeon(key: string, def: LocState['def']): DungeonState {
+  const dungeon: DungeonState = { key, id: def.id, def, players: new Set(), mobs: [], nodes: [], weather: 'clear', weatherUntil: 0, evts: [], bossText: [] };
+  for (const spawn of def.spawns) for (let i = 0; i < spawn.n; i++) spawnMob(dungeon, spawn.mob, false);
+  return dungeon;
+}
 export function spawnMob(l: LocState, id: string, add: boolean, at?: { x: number; y: number }): Mob {
   const d = MOBS[id]; const x = at?.x ?? rnd(10, 90), y = at?.y ?? rnd(Y0 + 8, Y1 - 4);
   const m: Mob = { uid: uid('m'), def: d, hp: d.hp, maxHp: d.hp, x, y, hx: x, hy: y, threat: {}, dmg: {}, target: null, atkAt: 0, tick: rint(0, 5), fx: [], phase: 0, dead: false, respawnAt: 0, add, enrage: 0, lastHit: 0, skills: d.skills, lvl: d.lvl, flashT: 0 };
+  if ('key' in l) m.dungeon = l as DungeonState;
   if (add) { m.maxHp = m.hp = Math.round(d.hp * .15); m.skills = []; } l.mobs.push(m); return m;
 }
 export const isNight = () => { const ph = ((now() % BAL.dayLengthMs) / BAL.dayLengthMs); return ph < .22 || ph > .78; };
@@ -24,9 +31,9 @@ const ev = (l: LocState, e: EvtView) => { l.evts.push(e); };
 const fxSum = (fx: Fx[], k: string) => { const t = now(); let s = 0; for (const f of fx) if (f.k === k && f.until > t) s += f.v; return s; };
 const fxHas = (fx: Fx[], k: string) => fx.some(f => f.k === k && f.until > now());
 const addFx = (fx: Fx[], k: string, dur: number, v: number, src?: string) => { const t = now(); const e = fx.find(f => f.k === k && f.src === src); if (e) { e.until = t + dur * 1000; e.v = Math.max(e.v, v); } else fx.push({ k, until: t + dur * 1000, v, src, next: t + 1000 }); };
-const locOf = (p: Player) => G.locs.get(p.loc)!;
+const locOf = (p: Player) => p.dungeon?.dungeon ?? G.locs.get(p.loc)!;
 const inPvp = (p: Player) => !p.mapEncounter && !!(LOCS[p.loc].pvp || p.duel);
-export const canEngageMob = (p: Player, m: Mob) => p.mapEncounter === m.mapEncounter;
+export const canEngageMob = (p: Player, m: Mob) => p.mapEncounter === m.mapEncounter && p.dungeon?.dungeon === m.dungeon;
 const isPrimaryEncounter = (m: Mob) => m.mapEncounter?.target === m.uid;
 function weatherMult(l: LocState, el: string) { return (WEATHER[l.weather]?.el[el] ?? 1) * (isNight() ? (el === 'shadow' ? 1.1 : el === 'light' ? .95 : 1) : 1); }
 // ---------- Schaden ----------
@@ -51,7 +58,7 @@ function phaseCheck(l: LocState, m: Mob) {
   const ph = m.def.phases; if (!ph) return; for (let i = ph.length - 1; i >= 0; i--) if (m.hp / m.maxHp <= ph[i].hp && m.phase <= i) { m.phase = i + 1; m.skills = ph[i].skills; toLoc(l, { t: 'chat', ch: 'boss', from: m.def.name, text: ph[i].text, at: now() }); ev(l, { k: 'fx', x: m.x, y: m.y, id: 'nova', el: 'arcane' }); break; }
 }
 export function damagePlayer(t: Player, a: number, crit: boolean, src: Player | Mob | null, el = 'phys') {
-  if (t.dead || !t.online || src && src.mapEncounter !== t.mapEncounter) return; const l = locOf(t);
+  if (t.dead || !t.online || src && ('c' in src ? locOf(src) !== locOf(t) || src.mapEncounter !== t.mapEncounter : !canEngageMob(t, src))) return; const l = locOf(t);
   if (t.shield > 0) { const ab = Math.min(t.shield, a); t.shield -= ab; a -= ab; }
   const red = fxSum(t.fx, 'tankred'); a = Math.round(a * (1 - red)); t.c.hp -= a; t.combatUntil = now() + 6000; ev(l, { k: crit ? 'crit' : 'dmg', x: t.x, y: t.y - 16, v: a, el, c: 'p', id: t.id }); t.hits++;
   if (t.hits % 6 === 0) for (const it of Object.values(t.c.equipment)) if (it?.dur !== undefined && it.dur > 0) it.dur = Math.max(0, it.dur - 1);
@@ -73,7 +80,7 @@ export function endDuel(w: Player, l: Player) { const win = w, lose = l; win.due
 function killMob(l: LocState, m: Mob) {
   m.dead = true; m.hp = 0; m.respawnAt = now() + m.def.respawn * 1000 * (m.add ? 0 : 1); ev(l, { k: 'die', x: m.x, y: m.y, id: m.uid });
   const parts: Player[] = []; const seen = new Set<string>();
-  for (const pid of Object.keys(m.dmg)) { const p = G.players.get(pid); if (p && p.online && p.loc === l.id && !seen.has(p.id)) { seen.add(p.id); parts.push(p); if (p.partyId && !m.mapEncounter) for (const mid of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(mid); if (q && q.online && q.loc === l.id && !q.dead && !seen.has(q.id)) { seen.add(q.id); parts.push(q); } } } }
+  for (const pid of Object.keys(m.dmg)) { const p = G.players.get(pid); if (p && p.online && l.players.has(p) && !seen.has(p.id)) { seen.add(p.id); parts.push(p); if (p.partyId && !m.mapEncounter) for (const mid of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(mid); if (q && q.online && l.players.has(q) && !q.dead && !seen.has(q.id)) { seen.add(q.id); parts.push(q); } } } }
   const groups = new Map<string, Player[]>(); for (const p of parts) { const k = p.partyId || p.id; (groups.get(k) || groups.set(k, []).get(k)!).push(p); }
   for (const [, g] of groups) {
     const n = g.length; const bonus = 1 + .15 * (n - 1); const party = n > 1 ? G.parties.get(g[0].partyId!) : null; const totLv = g.reduce((s, p) => s + p.c.level, 0);
@@ -81,12 +88,22 @@ function killMob(l: LocState, m: Mob) {
       const share = party?.expMode === 'level' ? p.c.level / totLv : 1 / n; const diff = p.c.level - m.lvl; const lf = diff > 8 ? Math.max(.1, 1 - (diff - 8) * .1) : 1;
       if ((m.dmg[p.id] || 0) < m.maxHp * (m.def.role === 'boss' ? .005 : .0) && n === 1) continue;
       const countsForQuest = !m.add || isPrimaryEncounter(m);
+      const bossReward = m.dungeon && m.def.role === 'boss' ? 'dungeonReward:' + m.def.id : undefined;
+      const rewardDay = String(Math.floor(now() / 864e5));
+      if (bossReward && p.c.choices[bossReward] === rewardDay) {
+        sys(p, 'Die Gruppenbelohnung für diesen Boss hast du heute bereits erhalten.');
+        continue;
+      }
       let gold = 0;
       publishProgress(p, () => {
+        if (bossReward) p.c.choices[bossReward] = rewardDay;
         if (isPrimaryEncounter(m) && m.mapEncounter) p.c.loc = m.mapEncounter.origin;
         gainExp(p, m.def.exp * share * bonus * lf * (n > 1 ? n : 1) / (n > 1 ? 1 : 1)); lootFor(p, m, m.add ? .1 : 1); petExpGain(p, m.def.exp * .2);
         gold = Math.round(rnd(m.def.gold[0], m.def.gold[1]) * (m.add ? .1 : 1) * (1 + petLoot(p))); p.c.gold += gold;
         p.c.kills[m.def.id] = (p.c.kills[m.def.id] || 0) + 1; if (countsForQuest) questEvent(p, 'kill', m.def.id, 1, m.def.fam);
+        if (m.def.role === 'normal' && isPrimaryEncounter(m) && m.mapEncounter && m.mapEncounter === p.mapEncounter) {
+          recordRegionalHunt(p, m.mapEncounter.mobPosition);
+        }
         const gd = p.c.guildId && G.guilds.get(p.c.guildId); if (gd) { gd.exp += Math.ceil(m.def.exp * .02); const gm = gd.members[p.id]; if (gm) gm.contrib += 1; guildLevel(gd); if (gd.quest.id === 'kills' && countsForQuest) gd.quest.prog++; }
       }, () => {
         ev(l, { k: 'loot', x: m.x, y: m.y - 10, v: `+${gold}g`, id: p.id });
@@ -97,7 +114,7 @@ function killMob(l: LocState, m: Mob) {
     }
   }
   if (m.def.role === 'boss') toLoc(l, { t: 'chat', ch: 'boss', from: '', text: `${m.def.name} wurde besiegt!`, at: now() });
-  if (m.def.role === 'boss') for (const p of G.players.values()) if (p.online) sys(p, `⚔ ${m.def.name} wurde besiegt!`, 'boss');
+  if (m.def.role === 'boss' && !m.dungeon) for (const p of G.players.values()) if (p.online) sys(p, `⚔ ${m.def.name} wurde besiegt!`, 'boss');
   for (const p of l.players) if (p.target === m.uid) { p.target = null; if (p.auto && !p.autoFarm) p.auto = false; }
 }
 export function guildLevel(g: any) { while (g.exp >= 1000 * Math.pow(g.level, 1.8) && g.level < 50) { g.exp -= Math.floor(1000 * Math.pow(g.level, 1.8)); g.level++; } }
@@ -155,19 +172,19 @@ export function useSkill(p: Player, skillId: string): string | null {
 function stunTarget(t: Mob | Player, sec: number) { addFx(t.fx, 'stun', sec, 1); if ('c' in t) (t as Player).stunnedUntil = now() + sec * 1000; }
 function addDot(t: Mob | Player, dur: number, total: number, src: string) { addFx(t.fx, 'dot', dur, Math.max(1, Math.round(total / dur)), src); }
 export function heal(t: Player, a: number) { if (t.dead) return; t.c.hp = Math.min(t.st.maxHp, t.c.hp + a); ev(locOf(t), { k: 'heal', x: t.x, y: t.y - 16, v: a, id: t.id }); }
-export const partyHere = (p: Player): Player[] => { const out = [p]; if (p.partyId) for (const id of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(id); if (q && q !== p && q.online && q.loc === p.loc && !q.dead) out.push(q); } return out; };
-export const canPvp = (p: Player, q: Player) => !q.dead && q !== p && !p.mapEncounter && !q.mapEncounter && ((p.duel?.opp === q.id) || (LOCS[p.loc].pvp && !p.duel && !q.duel && !(p.partyId && p.partyId === q.partyId) && !(p.c.guildId && p.c.guildId === q.c.guildId)));
+export const partyHere = (p: Player): Player[] => { const out = [p]; if (p.partyId) for (const id of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(id); if (q && q !== p && q.online && locOf(p).players.has(q) && q.mapEncounter === p.mapEncounter && !q.dead) out.push(q); } return out; };
+export const canPvp = (p: Player, q: Player) => !q.dead && q !== p && !p.mapEncounter && !q.mapEncounter && !p.dungeon && !q.dungeon && ((p.duel?.opp === q.id) || (LOCS[p.loc].pvp && !p.duel && !q.duel && !(p.partyId && p.partyId === q.partyId) && !(p.c.guildId && p.c.guildId === q.c.guildId)));
 function findFoe(p: Player, l: LocState, s: SkillDef): Mob | Player | null {
-  if (!p.target) return null; const m = l.mobs.find(x => x.uid === p.target && !x.dead && canEngageMob(p, x)); if (m) return m; const q = G.players.get(p.target); if (q && q.loc === p.loc && canPvp(p, q)) return q; return null;
+  if (!p.target) return null; const m = l.mobs.find(x => x.uid === p.target && !x.dead && canEngageMob(p, x)); if (m) return m; const q = G.players.get(p.target); if (q && l.players.has(q) && canPvp(p, q)) return q; return null;
 }
-function findAlly(p: Player, l: LocState): Player | null { if (!p.target) return null; const q = G.players.get(p.target); return q && q.loc === p.loc && !q.dead && (q === p || partyHere(p).includes(q) || !canPvp(p, q)) ? q : null; }
+function findAlly(p: Player, l: LocState): Player | null { if (!p.target) return null; const q = G.players.get(p.target); return q && l.players.has(q) && q.mapEncounter === p.mapEncounter && !q.dead && (q === p || partyHere(p).includes(q) || !canPvp(p, q)) ? q : null; }
 const range = (p: Player, s?: SkillDef) => (CLASS_BASE[p.c.cls].melee ? 16 : 52) + (s && (s.kind === 'aoe') ? 6 : 0);
 const inRange = (p: Player, t: Mob | Player, s?: SkillDef) => dist(p, t) <= range(p, s);
 function approach(p: Player, t: { x: number; y: number }) { const d = dist(p, t); if (d < 1) return; const stop = CLASS_BASE[p.c.cls].melee ? 9 : 36; const f = Math.max(0, (d - stop) / d); p.dx = clamp(p.x + (t.x - p.x) * f, 3, 97); p.dy = clamp(p.y + (t.y - p.y) * f, Y0, Y1); }
 // ---------- Tick ----------
 export function worldTick() {
   const t = now(); const t0 = Date.now(); G.stats.ticks++; const dt = BAL.tickMs / 1000;
-  for (const l of G.locs.values()) {
+  for (const l of [...G.locs.values(), ...G.dungeons.values()]) {
     if (!l.weatherUntil || t > l.weatherUntil) { const w = l.def.weather; l.weather = w[rint(0, w.length - 1)]; l.weatherUntil = t + BAL.weatherMs * rnd(.7, 1.4); }
     l.mobs = l.mobs.filter(m => {
       if (!m.mapEncounter || m.dead) return true;
@@ -179,12 +196,10 @@ export function worldTick() {
     l.mobs = l.mobs.filter(m => !((m.add || (m as any).event) && m.dead && t > m.lastHit + 4000));
     if (active) broadcast(l, t);
   }
-  for (const p of G.players.values()) if (p.travel && t >= p.travel.until && p.online) { arrive(p); }
+  for (const p of G.players.values()) if (p.travel && t >= p.travel.until && p.online) { finishTravel(p); }
   G.stats.tickMs = Math.round(G.stats.tickMs * .9 + (Date.now() - t0) * .1);
 }
 function revive(m: Mob) { m.dead = false; m.hp = m.maxHp; m.x = m.hx; m.y = m.hy; m.threat = {}; m.dmg = {}; m.target = null; m.phase = 0; m.skills = m.def.skills; m.fx = []; m.enrage = 0; }
-export let arrive: (p: Player) => void = () => {};
-export const setArrive = (f: (p: Player) => void) => { arrive = f; };
 function playerTick(p: Player, l: LocState, t: number, dt: number) {
   const st = p.st; const c = p.c;
   if (!p.online) { if (t - p.lastAct > 60000) { /* wird in index.ts aufgeräumt */ } }
@@ -206,7 +221,7 @@ function playerTick(p: Player, l: LocState, t: number, dt: number) {
   // Ziel / Auto-Kampf
   if (p.autoFarm) autoFarm(p, l, t);
   const tgtMob = p.target ? l.mobs.find(m => m.uid === p.target && !m.dead && canEngageMob(p, m)) : null; const tgtPl = !tgtMob && p.target ? G.players.get(p.target) : null;
-  if (p.target && !tgtMob && !(tgtPl && tgtPl.loc === p.loc && !tgtPl.dead)) { p.target = null; if (!p.autoFarm) p.auto = false; }
+  if (p.target && !tgtMob && !(tgtPl && l.players.has(tgtPl) && !tgtPl.dead)) { p.target = null; if (!p.autoFarm) p.auto = false; }
   if (p.auto && !stun && p.target) {
     const foe = tgtMob || (tgtPl && canPvp(p, tgtPl) ? tgtPl : null);
     if (foe) { if (!inRange(p, foe)) { approach(p, foe); } else { if (d < .5 || true) { p.dx = p.x; p.dy = p.y; } if (t >= p.atkAt && !l.def.safe || (t >= p.atkAt && p.duel)) { p.atkAt = t + st.atkMs; p.combatUntil = t + 6000; const magic = ['dark_mage', 'light_mage', 'summoner', 'healer'].includes(c.cls); playerHit(p, foe, 1, magic ? 'arcane' : 'phys', magic); ev(l, { k: 'proj', x: p.x, y: p.y - 20, to: foe.x + ',' + (foe.y - 14), el: magic ? 'arcane' : 'phys', id: 'auto', from: p.id }); } } }
@@ -219,7 +234,7 @@ function playerTick(p: Player, l: LocState, t: number, dt: number) {
   // Duell-Timeout
   if (p.duel && t > p.duel.until) { const o = G.players.get(p.duel.opp); p.duel = null; if (o) o.duel = null; sys(p, 'Duell abgebrochen (Zeit).'); }
 }
-function respawn(p: Player) { const l = locOf(p); const rl = LOCS[p.c.choices.respawn || 'aurelia_plaza'] ? (p.c.choices.respawn || 'aurelia_plaza') : 'aurelia_plaza'; const target = LOCS[p.loc].kind === 'arena' ? 'arena' : rl; p.dead = false; p.inScene = false; p.mapEncounter = undefined; send(p, { t: 'scene', on: false }); recalc(p); p.c.hp = Math.ceil(p.st.maxHp * .5); p.fx = []; p.shield = 0; if (target !== p.loc) { l.players.delete(p); p.loc = target; G.locs.get(target)!.players.add(p); } p.x = p.dx = 50; p.y = p.dy = 80; send(p, { t: 'respawn', loc: p.loc }); send(p, { t: 'char', c: p.c }); }
+function respawn(p: Player) { const fromDungeon = leaveDungeon(p); const l = locOf(p); const rl = LOCS[p.c.choices.respawn || 'aurelia_plaza'] ? (p.c.choices.respawn || 'aurelia_plaza') : 'aurelia_plaza'; const target = LOCS[p.loc].kind === 'arena' ? 'arena' : rl; p.dead = false; p.inScene = false; p.mapEncounter = undefined; if (!fromDungeon) send(p, { t: 'scene', on: false }); recalc(p); p.c.hp = Math.ceil(p.st.maxHp * .5); p.fx = []; p.shield = 0; if (target !== p.loc) { l.players.delete(p); p.loc = target; G.locs.get(target)!.players.add(p); } p.x = p.dx = 50; p.y = p.dy = 80; send(p, { t: 'respawn', loc: p.loc }); send(p, { t: 'char', c: p.c }); }
 function petTick(p: Player, l: LocState, t: number, tg: Mob | null | undefined) {
   const pet = p.c.pets.find(x => x.uid === p.c.activePet); if (!pet || pet.hatchAt) return; const sp = SPECIES[pet.species];
   if (t < p.petAt) return; p.petAt = t + 2400 / sp.spd; if (pet.energy < 100 && t % 3 < 1) pet.energy = Math.min(100, pet.energy + (p.combatUntil > t ? 0 : 1)); if (pet.energy <= 0 || p.combatUntil < t) return;
@@ -248,12 +263,12 @@ function broadcast(l: LocState, t: number) {
 const eqv = (p: Player) => { const o: Record<string, string> = {}; for (const [k, v] of Object.entries(p.c.equipment)) if (v) o[k] = v.id; return o; };
 // ---------- Mob-KI ----------
 function mobTick(m: Mob, l: LocState, t: number, dt: number) {
-  if (m.dead) { if (!m.add && t > m.respawnAt) revive(m); return; }
-  for (const f of m.fx) if (f.k === 'dot' && f.until > t && (f.next || 0) <= t) { f.next = t + 1000; const src = G.players.get(f.src || ''); if (m.mapEncounter && (!src || !canEngageMob(src, m))) continue; m.hp -= f.v; m.dmg[f.src || ''] = (m.dmg[f.src || ''] || 0) + f.v; m.threat[f.src || ''] = (m.threat[f.src || ''] || 0) + f.v; ev(l, { k: 'dmg', x: m.x, y: m.y - 14, v: f.v, el: 'nature', id: m.uid }); if (m.hp <= 0 && src) { killMob(l, m); return; } }
+  if (m.dead) { if (!m.add && !m.dungeon && t > m.respawnAt) revive(m); return; }
+  for (const f of m.fx) if (f.k === 'dot' && f.until > t && (f.next || 0) <= t) { f.next = t + 1000; const src = G.players.get(f.src || ''); if ((m.mapEncounter || m.dungeon) && (!src || !l.players.has(src) || !canEngageMob(src, m))) continue; m.hp -= f.v; m.dmg[f.src || ''] = (m.dmg[f.src || ''] || 0) + f.v; m.threat[f.src || ''] = (m.threat[f.src || ''] || 0) + f.v; ev(l, { k: 'dmg', x: m.x, y: m.y - 14, v: f.v, el: 'nature', id: m.uid }); if (m.hp <= 0 && src) { killMob(l, m); return; } }
   m.fx = m.fx.filter(f => f.until > t); if (m.fx.some(f => f.k === 'stun')) return;
   // Ziel wählen
-  let tgt = m.target ? G.players.get(m.target) : undefined; if (tgt && (tgt.loc !== l.id || tgt.dead || !tgt.online || !canEngageMob(tgt, m))) { delete m.threat[tgt.id]; tgt = undefined; m.target = null; }
-  const tp = Object.entries(m.threat).filter(([id]) => { const q = G.players.get(id); return q && q.loc === l.id && !q.dead && q.online && canEngageMob(q, m); }).sort((a, b) => b[1] - a[1])[0];
+  let tgt = m.target ? G.players.get(m.target) : undefined; if (tgt && (!l.players.has(tgt) || tgt.dead || !tgt.online || !canEngageMob(tgt, m))) { delete m.threat[tgt.id]; tgt = undefined; m.target = null; }
+  const tp = Object.entries(m.threat).filter(([id]) => { const q = G.players.get(id); return q && l.players.has(q) && !q.dead && q.online && canEngageMob(q, m); }).sort((a, b) => b[1] - a[1])[0];
   if (tp) tgt = G.players.get(tp[0]);
   else if (!m.mapEncounter && !l.def.safe) { let best = 1e9; for (const q of l.players) if (!q.dead && q.online && (!q.geo?.on || q.inScene) && canEngageMob(q, m)) { const d = dist(m, q); if (d < m.def.aggro && d < best) { best = d; tgt = q; } } }
   m.target = tgt?.id || null;

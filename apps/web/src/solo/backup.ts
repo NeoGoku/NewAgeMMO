@@ -1,5 +1,5 @@
 import { ACC_RE, ATTRS, CLASS_IDS, NAME_RE, validPropertyId, validPropertyOwnership, type ClassId } from '@nam/shared';
-import { FURN, ITEMS, LOCS, RECIPES, SPECIES } from '@nam/game-data';
+import { FURN, ITEMS, LOCS, RECIPES, SPECIES, validGeoTerritoryId } from '@nam/game-data';
 
 type Doc = Record<string, unknown>;
 export type SoloData = Record<string, Record<string, Doc>>;
@@ -82,6 +82,8 @@ function validData(value: unknown): value is SoloData {
       case 'accounts': return true;
       case 'chars': return dict(docs, (c, key) => character(c, key, owners));
       case 'guilds': return dict(docs, guild);
+      case 'territories': return dict(docs, (claim, key) =>
+        validGeoTerritoryId(key) && record(claim) && claim.id === key && id(claim.guildId) && positiveInt(claim.capturedAt));
       case 'houses': return dict(docs, house);
       case 'market': return dict(docs, listing);
       default: return false;

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { GEO_STEER_MODES, GEO_TRAVEL_MODES, type GeoSteerMode, type GeoTravelMode } from '@nam/shared';
 import { net } from '../net';
 
-export function Joystick({ bearing, onStart }: { bearing: () => number; onStart: () => void }) {
+export function Joystick({ bearing, onStart, available }: { bearing: () => number; onStart: () => void; available: readonly GeoTravelMode[] }) {
+  const [preferredMode, setPreferredMode] = useState<GeoSteerMode>('walk');
+  const mode = available.includes(preferredMode) ? preferredMode : 'walk';
+  const activeMode = useRef<GeoSteerMode>('walk');
   const pointer = useRef<number | null>(null);
   const input = useRef({ x: 0, y: 0 });
   const sendTimer = useRef<ReturnType<typeof setInterval>>();
@@ -11,6 +15,7 @@ export function Joystick({ bearing, onStart }: { bearing: () => number; onStart:
     const { x, y } = input.current;
     const angle = bearing() * Math.PI / 180;
     net.send('geoSteer', {
+      mode: activeMode.current,
       east: Math.max(-1, Math.min(1, x * Math.cos(angle) - y * Math.sin(angle))),
       north: Math.max(-1, Math.min(1, -x * Math.sin(angle) - y * Math.cos(angle)))
     });
@@ -40,12 +45,19 @@ export function Joystick({ bearing, onStart }: { bearing: () => number; onStart:
     setKnob(input.current);
   }
 
-  return <button type="button" className="geo-stick" aria-label="Virtueller Joystick" onClick={e => e.stopPropagation()}
+  return <div className="geo-manual" onClick={e => e.stopPropagation()}>
+    <select aria-label="Fortbewegung mit Joystick" value={mode} disabled={pointer.current !== null}
+      onChange={e => setPreferredMode(e.target.value as GeoSteerMode)}>
+      {GEO_STEER_MODES.filter(id => available.includes(id)).map(id =>
+        <option key={id} value={id}>{GEO_TRAVEL_MODES[id].label}</option>)}
+    </select>
+    <button type="button" className="geo-stick" aria-label="Virtueller Joystick" onClick={e => e.stopPropagation()}
     onPointerDown={e => {
       if (pointer.current !== null || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       pointer.current = e.pointerId;
+      activeMode.current = mode;
       e.currentTarget.setPointerCapture(e.pointerId);
       onStart();
       update(e);
@@ -54,5 +66,6 @@ export function Joystick({ bearing, onStart }: { bearing: () => number; onStart:
     }}
     onPointerMove={update} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop}>
     <span aria-hidden="true" style={{ transform: `translate(${knob.x * 26}px, ${knob.y * 26}px)` }} />
-  </button>;
+    </button>
+  </div>;
 }
