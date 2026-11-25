@@ -9,7 +9,7 @@
     "dev:web": "npm run dev -w @nam/web",
     "build": "npm run build -w @nam/web",
     "typecheck": "tsc -p packages/shared && tsc -p packages/game-data && tsc -p apps/server && tsc -p apps/web",
-    "test": "npm run test -w @nam/server",
+    "test": "npm run test -w @nam/server && tsx apps/web/tests/map.ts && tsx apps/web/tests/solo-backup.ts",
     "start": "npm run start -w @nam/server"
   },
   "devDependencies": { "typescript": "^5.6.3" }

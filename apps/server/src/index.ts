@@ -1,8 +1,10 @@
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { makeStore } from './store-node'; import { G } from './state'; import { createCore, log } from './core'; import { LOCS, NPCS } from '@nam/game-data';
+import { configureOsm } from './geo-osm';
 const PORT = Number(process.env.PORT || 8080);
 async function main() {
+  configureOsm(process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter');
   const core = await createCore(makeStore());
   const server = http.createServer((req, res) => {
     const cors = { 'access-control-allow-origin': '*' };

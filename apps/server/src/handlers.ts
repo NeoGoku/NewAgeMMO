@@ -4,17 +4,18 @@ import { haversine } from '@nam/shared';
 import { ITEMS, LOCS, NPCS, QUESTS, RECIPES, PROFS, SKILLS, CLASSES, SPECIES, MOBS, NODES } from '@nam/game-data';
 import { G, now, uid, send, sys, dist, clamp, type Player } from './state';
 import { invAdd, invRemove, invCount, takeUid, giveInst, recalc, isEquip, mkItem, repairCost, repairAll, rollRarity, gainExp, trainCost, addTrainExp, summary, eqView } from './chars';
-import { useSkill, usePotion, profGain, startGather, heal, locOf, addFx, ev } from './game';
+import { useSkill, usePotion, profGain, startGather, heal, locOf, addFx, ev, canEngageMob } from './game';
 import { startTravel, teleportTo, joinLoc } from './world';
 import { acceptQuest, turnIn, availableAt, readyAt, questEvent, dailyReset } from './quests';
-export type Handler = (p: Player, m: any) => string | null | void | Record<string, any>;
+import { regionalNpcNearby } from './geo-world';
+export type Handler = (p: Player, m: any, receivedAt?: number) => string | null | void | Record<string, any>;
 export const H: Record<string, Handler> = {};
 export const NO_CHAR = new Set(['walk', 'target', 'auto', 'skill', 'hotbar', 'ping', 'emote', 'chat', 'npc', 'gather', 'autoFarm', 'profile', 'houseList', 'shop']);
 const S = (v: any, n = 64) => (typeof v === 'string' ? v.slice(0, n) : '');
 const N = (v: any, a: number, b: number, d = a) => { const x = Number(v); return Number.isFinite(x) ? clamp(Math.floor(x), a, b) : d; };
 H.ping = (p, m) => ({ pong: now() });
 H.walk = (p, m) => { if (p.dead || p.travel || p.houseId) return; p.dx = clamp(Number(m.x) || p.x, 3, 97); p.dy = clamp(Number(m.y) || p.y, 52, 94); p.pending = null; p.gather = null; p.autoFarm && !m.keep && (p.autoFarm = null); };
-H.target = (p, m) => { if (p.dead) return; const id = S(m.id) || null; p.target = id; if (id && !p.autoFarm) { /* Ziel gewählt: Auto-Angriff nur bei feindlichem Ziel */ const l = locOf(p); p.auto = !!l.mobs.find(x => x.uid === id) || !!(G.players.get(id) && (G.players.get(id)!.duel || LOCS[p.loc].pvp) && id !== p.id); } if (!id) p.auto = false; };
+H.target = (p, m) => { if (p.dead) return; const id = S(m.id) || null; p.target = id; if (id && !p.autoFarm) { /* Ziel gewählt: Auto-Angriff nur bei feindlichem Ziel */ const l = locOf(p); p.auto = !!l.mobs.find(x => x.uid === id && canEngageMob(p, x)) || !!(G.players.get(id) && (G.players.get(id)!.duel || LOCS[p.loc].pvp) && id !== p.id); } if (!id) p.auto = false; };
 H.auto = (p, m) => { p.auto = !!m.on && !!p.target; };
 H.skill = (p, m) => { const e = useSkill(p, S(m.id)); if (e) return e; };
 H.hotbar = (p, m) => { const s = N(m.slot, 0, 5); const id = m.id ? S(m.id) : null; if (id && (!SKILLS[id] || SKILLS[id].cls !== p.c.cls || SKILLS[id].lvl > p.c.level)) return 'Nicht verfügbar'; p.c.hotbar[s] = id; p.dirty = true; };
@@ -34,7 +35,7 @@ H.useItem = (p, m) => {
   if (u.buff) { const k = ({ atk: 'b_atk', def: 'b_def', crit: 'b_crit', speed: 'b_speed', regen: 'regen' } as any)[u.buff.stat]; addFx(p.fx, k, u.buff.dur, u.buff.stat === 'regen' ? Math.round(p.st.maxHp * .004) : u.buff.val, 'item:' + d.id); }
   if (u.repair) { repairAll(p.c); recalc(p); sys(p, 'Ausrüstung repariert.'); }
   if (u.petFood) { const pet = p.c.pets.find(x => x.uid === p.c.activePet); if (!pet) return 'Kein aktives Pet'; pet.energy = Math.min(100, pet.energy + 30); pet.exp += u.petFood; sys(p, `${pet.name} frisst genüsslich.`); }
-  if (u.dmg) { const l = locOf(p); if (l.def.safe) return 'In sicheren Zonen nicht erlaubt'; const t = p.target && l.mobs.find(x => x.uid === p.target && !x.dead); if (!t) return 'Kein Ziel'; for (const mm of l.mobs) if (!mm.dead && dist(mm, t) < 25) { mm.hp -= 0; import('./game').then(g => g.damageMob(p, mm, u.dmg!, false, 'fire')); } }
+  if (u.dmg) { const l = locOf(p); if (l.def.safe) return 'In sicheren Zonen nicht erlaubt'; const t = p.target && l.mobs.find(x => x.uid === p.target && !x.dead && canEngageMob(p, x)); if (!t) return 'Kein Ziel'; for (const mm of l.mobs) if (!mm.dead && canEngageMob(p, mm) && dist(mm, t) < 25) { mm.hp -= 0; import('./game').then(g => g.damageMob(p, mm, u.dmg!, false, 'fire')); } }
   it.qty--; if (it.qty <= 0) p.c.inventory.splice(p.c.inventory.indexOf(it), 1); p.dirty = true;
 };
 H.equip = (p, m) => {
@@ -47,7 +48,15 @@ H.sortInv = (p) => { p.c.inventory.sort((a, b) => ITEMS[a.id].type.localeCompare
 H.stashPut = (p, m) => { const it = takeUid(p.c.inventory, S(m.uid), N(m.qty, 1, 9999, 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it, p.c.stash, BAL.stashSize)) { giveInst(p.c, it); return 'Lager voll'; } p.dirty = true; };
 H.stashTake = (p, m) => { const it = takeUid(p.c.stash, S(m.uid), N(m.qty, 1, 9999, 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it)) { giveInst(p.c, it, p.c.stash, 999); return 'Inventar voll'; } p.dirty = true; };
 // ---- NPC / Shops ----
-const npcHere = (p: Player, id: string) => { const n = NPCS[id]; if (!n) return null; if (n.loc === p.loc) return n; const g = p.geo; if (g?.on && g.has) { const [la, lo] = placeNear(n.loc, 'npc:' + n.id); if (haversine(g.lat, g.lon, la, lo) <= 260) return n; } return null; };
+const npcHere = (p: Player, id: string) => {
+  const npc = NPCS[id];
+  if (!npc) return null;
+  const g = p.geo;
+  if (!g?.on || p.inScene) return npc.loc === p.loc ? npc : null;
+  if (!g.has) return null;
+  const [lat, lon] = placeNear(npc.loc, 'npc:' + npc.id);
+  return haversine(g.lat, g.lon, lat, lon) <= 260 || regionalNpcNearby(id, g.lat, g.lon, 160) ? npc : null;
+};
 function shopList(p: Player, id: string) {
   const n = NPCS[id]; if (!n?.shop) return []; const out: { id: string; price: number }[] = [];
   for (const d of Object.values(ITEMS)) { if (!n.shop.types.includes(d.type) || !n.shop.tiers.includes(d.tier)) continue; if (d.type === 'weapon' && d.cls !== p.c.cls) continue; if (d.id.startsWith('tome_') || d.id.startsWith('elx_') && d.tier > 3 && false) continue; if (d.type === 'mount') continue; out.push({ id: d.id, price: d.price }); }

@@ -8,19 +8,41 @@ export function defaultServer(): string {
 }
 class Net {
   ws: WebSocket | null = null; rid = 0; pend = new Map<number, (m: Msg) => void>(); fns = new Set<Fn>(); onClose: (() => void) | null = null; url = '';
-  connect(url: string): Promise<void> {
-    this.close(); this.url = url;
+  private soloClosing?: Promise<Error | undefined>;
+  async connect(url: string): Promise<void> {
+    this.close();
+    if (isSoloServer(url)) await this.soloClosing;
+    this.url = url;
     return new Promise((res, rej) => {
-      let ws: WebSocket; try { ws = (url.startsWith('solo') ? new SoloSocket() : new WebSocket(url)) as any; } catch (e) { return rej(new Error('Ungültige Serveradresse')); } this.ws = ws; this.rid = 0; const to = setTimeout(() => { rej(new Error('Zeitüberschreitung – Server nicht erreichbar')); ws.close(); }, 8000);
+      let ws: WebSocket; try { ws = (isSoloServer(url) ? new SoloSocket() : new WebSocket(url)) as any; } catch { return rej(new Error('Ungültige Serveradresse')); } this.ws = ws; this.rid = 0; const to = setTimeout(() => { rej(new Error('Zeitüberschreitung – Server nicht erreichbar')); ws.close(); }, 8000);
       ws.onopen = () => { clearTimeout(to); res(); }; ws.onerror = event => { clearTimeout(to); rej(event instanceof Error ? event : new Error('Server nicht erreichbar')); };
       ws.onmessage = e => { if (this.ws !== ws) return; let m: Msg; try { m = JSON.parse(e.data); } catch { return; } if (m.rid && this.pend.has(m.rid)) { this.pend.get(m.rid)!(m); this.pend.delete(m.rid); } this.fns.forEach(f => f(m)); };
-      ws.onclose = () => { for (const [, f] of this.pend) f({ t: 'err', err: 'Verbindung getrennt' }); this.pend.clear(); if (this.ws === ws) { this.ws = null; this.onClose?.(); } };
+      ws.onclose = () => { if (this.ws === ws) { this.close(); this.onClose?.(); } };
     });
   }
   get open() { return !!this.ws && this.ws.readyState === 1; }
-  close() { const w = this.ws; this.ws = null; if (w) { w.onclose = null; w.close(); } for (const f of this.pend.values()) f({ t: 'err', err: 'Verbindung getrennt' }); this.pend.clear(); }
+  close() {
+    const w = this.ws;
+    this.ws = null;
+    if (w) {
+      if (w instanceof SoloSocket) {
+        const closing = this.soloClosing = w.closed;
+        void closing.then(() => { if (this.soloClosing === closing) this.soloClosing = undefined; });
+      }
+      w.onclose = null;
+      w.close();
+    }
+    for (const f of this.pend.values()) f({ t: 'err', err: 'Verbindung getrennt' });
+    this.pend.clear();
+  }
+  async closeSolo() {
+    if (this.ws instanceof SoloSocket) this.close();
+    const error = await this.soloClosing;
+    if (error) throw error;
+  }
   send(t: string, o: Record<string, any> = {}) { if (this.open) this.ws!.send(JSON.stringify({ t, rid: ++this.rid, ...o })); }
   req(t: string, o: Record<string, any> = {}): Promise<Msg> { return new Promise(res => { if (!this.open) return res({ t: 'err', err: 'Nicht verbunden' }); const rid = ++this.rid; this.pend.set(rid, res); this.ws!.send(JSON.stringify({ t, rid, ...o })); setTimeout(() => { if (this.pend.delete(rid)) res({ t: 'err', err: 'Zeitüberschreitung' }); }, 10000); }); }
   on(f: Fn) { this.fns.add(f); return () => { this.fns.delete(f); }; }
 }
 export const net = new Net();
+export const isSoloServer = (url: string) => url.startsWith('solo');

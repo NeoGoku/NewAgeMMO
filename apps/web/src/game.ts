@@ -1,23 +1,23 @@
-import type { Msg } from '@nam/shared';
-import { net } from './net'; import { state, set, toast, saveSettings } from './store'; import { audio } from './audio';
+import type { Msg, StateMsgStrict } from '@nam/shared';
+import { net } from './net'; import { state, set, toast, saveSettings, saveToken } from './store'; import { audio } from './audio';
 export const view = { snap: null as any, prev: null as any, snapAt: 0, me: '' as string, evts: [] as any[], mobs: new Map<string, any>() };
 let reconnecting = false;
 export async function connect(): Promise<string | null> {
   set({ conn: 'connecting' }); try { await net.connect(state.settings.server); set({ conn: 'ok' }); return null; } catch (e: any) { set({ conn: 'lost' }); return e.message || 'Fehler'; }
 }
 export async function authenticate(mode: 'login' | 'register', user: string, pass: string): Promise<string | null> {
-  const e = await connect(); if (e) return e; const r = await net.req(mode, { user, pass }); if (r.t === 'err') return r.err; saveToken(r.token); set({ user: r.user, token: r.token, chars: r.chars, admin: !!r.admin, screen: 'chars' }); return null;
+  const e = await connect(); if (e) return e; const r = await net.req(mode, { user, pass }); if (r.t === 'err') return r.err; saveToken(net.url, r.token); set({ user: r.user, token: r.token, chars: r.chars, admin: !!r.admin, screen: 'chars' }); return null;
 }
 export async function tryResume(): Promise<string | null> {
-  if (!state.token) return 'Kein gespeicherter Login'; const e = await connect(); if (e) return e; const r = await net.req('resume', { token: state.token }); if (r.t === 'err') { saveToken(''); return r.err; } set({ user: r.user, chars: r.chars, admin: !!r.admin, screen: 'chars' }); return null;
+  if (!state.token) return 'Kein gespeicherter Login'; const e = await connect(); if (e) return e; const r = await net.req('resume', { token: state.token }); if (r.t === 'err') { if (r.err === 'Sitzung ungültig' || r.err === 'Sitzung abgelaufen') { saveToken(net.url, ''); set({ token: '' }); } return r.err; } set({ user: r.user, chars: r.chars, admin: !!r.admin, screen: 'chars' }); return null;
 }
-const saveToken = (t: string) => { try { t ? localStorage.setItem('nam.token', t) : localStorage.removeItem('nam.token'); } catch { /* */ } };
 export async function enterGame(id: string): Promise<string | null> {
   const r = await net.req('enter', { id }); if (r.t === 'err') return r.err; view.me = id; set({ char: r.char, loc: r.loc, screen: 'game', chat: [], dialog: null, panel: null, snap: null, died: null, travel: null, house: null, party: null, guild: null }); audio.startMusic(themeOf(r.loc)); net.send('guildInfo'); net.send('friends');
   if (r.away > 60000) toast(`Willkommen zurück! Du warst ${Math.round(r.away / 60000)} Min. weg.`); return null;
 }
-export async function logoutChar() { const r = await net.req('logout'); if (r.t === 'err') { toast(r.err); return false; } set({ screen: 'chars', chars: r.chars, char: null, snap: null, panel: null, dialog: null }); audio.stopMusic(); return true; }
-export function logoutAccount() { net.close(); saveToken(''); set({ screen: 'title', token: '', user: '', chars: [], char: null }); audio.stopMusic(); }
+export async function logoutChar() { const r = await net.req('logout'); if (r.t === 'err') { toast(r.err); return false; } set({ screen: 'chars', chars: r.chars, char: null, snap: null, panel: null, dialog: null }); stopGameAudio(); return true; }
+export function logoutAccount() { net.close(); saveToken(net.url, ''); set({ screen: 'title', token: '', user: '', chars: [], char: null }); stopGameAudio(); }
+function stopGameAudio() { audio.stopMusic(); audio.setAmbient('clear'); }
 import { LOCS } from '@nam/game-data';
 export const themeOf = (loc: string) => LOCS[loc]?.theme || 'city';
 export const act = (t: string, o: Record<string, any> = {}) => net.send(t, o);
@@ -26,17 +26,37 @@ export function pushChat(m: any) { set({ chat: [...state.chat.slice(-199), m] })
 net.onClose = () => { if (state.screen === 'game' && !reconnecting) { reconnecting = true; set({ conn: 'lost' }); void reconnectLoop(); } };
 async function reconnectLoop() {
   const id = state.char?.id; for (let i = 0; i < 40 && state.screen === 'game'; i++) { await new Promise(r => setTimeout(r, Math.min(5000, 800 + i * 400))); const e = await tryResumeSilent(); if (!e && id) { const r = await net.req('enter', { id }); if (r.t !== 'err') { set({ char: r.char, conn: 'ok', screen: 'game', snap: null }); reconnecting = false; toast('Verbindung wiederhergestellt', 'ok'); return; } } }
-  reconnecting = false; set({ screen: 'title', conn: 'lost' }); toast('Verbindung verloren', 'err');
+  reconnecting = false; set({ screen: 'title', conn: 'lost' }); stopGameAudio(); toast('Verbindung verloren', 'err');
 }
 async function tryResumeSilent() { try { await net.connect(state.settings.server); } catch (e: any) { return e.message; } const r = await net.req('resume', { token: state.token }); return r.t === 'err' ? r.err : null; }
 const KIND_SFX: Record<string, string> = { crit: 'crit', dmg: 'hit', heal: 'heal', miss: 'miss', block: 'block' };
 net.on((m: Msg) => {
   switch (m.t) {
     case 'state': {
-      const first = !view.snap; view.prev = view.snap; view.snap = m; view.snapAt = performance.now();
-      for (const e of m.evts as any[]) { view.evts.push({ ...e, born: performance.now() }); if (state.screen === 'game') { const mine = e.id === view.me || e.from === view.me || e.c === 'p'; if (KIND_SFX[e.k] && (mine || e.k === 'dmg')) { if (e.c === 'p' && e.id === view.me) audio.sfx('hit'); else if (e.c !== 'p') audio.sfx(KIND_SFX[e.k]); } if (e.k === 'fx' && e.id?.startsWith('cast_') && e.from === view.me) audio.sfx(e.id); if (e.k === 'loot' && e.id === view.me) audio.sfx('coin'); if (e.k === 'lvl' && Math.abs(e.x - (view.snap.players.find((p: any) => p.id === view.me)?.x ?? -99)) < 2) audio.sfx('levelup'); if (e.k === 'die' && !String(e.id).startsWith('p')) audio.sfx('die'); } }
+      const snapshot = m as StateMsgStrict;
+      view.prev = view.snap; view.snap = m; view.snapAt = performance.now();
+      const player = snapshot.players.find(p => p.id === view.me);
+      if (state.screen === 'game' && state.inScene && player && Math.hypot(player.dx - player.x, player.dy - player.y) > 1) audio.sfx('step');
+      for (const e of snapshot.evts) {
+        view.evts.push({ ...e, born: view.snapAt });
+        if (state.screen !== 'game') continue;
+        const ownCombat = e.id === view.me || e.from === view.me || (!!e.id && e.id === snapshot.me.target);
+        const ownDefence = (e.k === 'miss' || e.k === 'block') && player &&
+          Math.abs(e.x - player.x) < 1 && Math.abs(e.y - player.y + 9) <= 1;
+        if (KIND_SFX[e.k] && (ownCombat || ownDefence)) audio.sfx(KIND_SFX[e.k]);
+        if (e.k === 'fx' && e.id?.startsWith('cast_') && e.from === view.me) audio.sfx(e.id);
+        if (e.k === 'loot' && e.id === view.me) audio.sfx('coin');
+      }
       if (view.evts.length > 200) view.evts.splice(0, view.evts.length - 200);
-      if (state.loc !== m.loc) set({ loc: m.loc }); set({ snap: m as any }); if (first) { audio.setAmbient(m.weather); } else if (view.prev && view.prev.weather !== m.weather) audio.setAmbient(m.weather); break; }
+      if (state.loc !== snapshot.loc) {
+        set({ loc: snapshot.loc });
+        if (state.screen === 'game') audio.startMusic(themeOf(snapshot.loc));
+      }
+      set({ snap: snapshot });
+      if (state.screen === 'game') audio.setAmbient(snapshot.weather);
+      break;
+    }
+    case 'geo': if (state.screen === 'game' && !state.inScene && m.me?.mode === 'virtual' && m.me?.dest) audio.sfx('step'); break;
     case 'char': set({ char: m.c }); break;
     case 'enter': { view.snap = null; view.evts = []; set({ loc: m.loc, travel: null, dialog: null, died: null, house: null, inScene: false }); audio.startMusic(themeOf(m.loc)); break; }
     case 'scene': { if (m.on) { view.snap = null; view.evts = []; audio.sfx('travel'); } set({ inScene: !!m.on, dialog: m.on ? null : state.dialog, panel: null }); break; }
@@ -66,5 +86,5 @@ net.on((m: Msg) => {
     case 'gather': audio.sfx('gather'); break;
   }
 });
-export function applySettings() { const s = state.settings; audio.setVolumes({ master: s.master, music: s.music, sfx: s.sfx }); saveSettings(); }
-export function quit() { try { const cap = (window as any).Capacitor; if (cap?.Plugins?.App?.exitApp) { cap.Plugins.App.exitApp(); return; } } catch { /* */ } set({ screen: 'bye' }); try { window.close(); } catch { /* */ } }
+export function applySettings() { const s = state.settings; audio.setVolumes({ master: s.master, music: s.music, ambience: s.ambience, sfx: s.sfx }); saveSettings(); }
+export function quit() { stopGameAudio(); try { const cap = (window as any).Capacitor; if (cap?.Plugins?.App?.exitApp) { cap.Plugins.App.exitApp(); return; } } catch { /* */ } set({ screen: 'bye' }); try { window.close(); } catch { /* */ } }

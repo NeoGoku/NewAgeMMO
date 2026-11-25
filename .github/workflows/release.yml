@@ -18,11 +18,24 @@ jobs:
       - name: Web-Build (APK, relative Pfade)
         run: npm run build -w @nam/web
         env: { VITE_DEFAULT_SERVER: '${{ vars.NAM_SERVER_URL }}' }
+      - name: Persistenten Android-Debugschlüssel bereitstellen
+        env:
+          NAM_ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.NAM_ANDROID_DEBUG_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          if [[ -n "$NAM_ANDROID_DEBUG_KEYSTORE_B64" ]]; then
+            umask 077
+            mkdir -p "$HOME/.android"
+            printf '%s' "$NAM_ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          else
+            echo "::warning::Ohne persistenten Android-Signierschlüssel erfordert eine abweichend signierte APK eine Migration per Solo-Backup."
+          fi
       - name: Android-Projekt erzeugen und Debug-APK bauen
         working-directory: apps/android
         run: |
           npm install --no-audit --no-fund
           npx cap add android
+          node prepare.mjs
           npx cap sync android
           cd android && ./gradlew assembleDebug --no-daemon
       - name: Artefakte benennen
@@ -41,4 +54,4 @@ jobs:
           files: out/*
           generate_release_notes: true
           body: |
-            **Download:** `NewAgeMMO-*.apk` (Android, Debug-signiert – „Unbekannte Apps“ erlauben). Browser/Windows-PWA: siehe README.
+            **Download:** `NewAgeMMO-*.apk` (Android, Debug-signiert – „Unbekannte Apps“ erlauben). Vor einem APK-Wechsel mit anderer Signatur den Solo-Spielstand exportieren. Browser/Windows-PWA: siehe README.

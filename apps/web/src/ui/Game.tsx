@@ -21,7 +21,8 @@ export function Game() {
   const geoMode = useS(s => s.geoMode); const walking = useS(s => s.geoWalking); const navPanel = useS(s => s.navPanel); const chatOpen = useS(s => s.hudChat); const scale = useS(s => s.settings.uiScale);
   useTick(250); const me = snap?.me; const cb = CLASS_BASE[char.cls]; const need = char.level >= BAL.maxLevel ? BAL.prestigeExp : expToNext(char.level); const expv = char.level >= BAL.maxLevel ? char.pexp : char.exp;
   const [more, setMore] = useState(false);
-  useEffect(() => { const h = (e: Event) => { const d = (e as CustomEvent).detail; set({ geoMode: d.mode, geoWalking: d.walking }); }; geoBus.addEventListener('state', h); return () => geoBus.removeEventListener('state', h); }, []);
+  const [geoRegion, setGeoRegion] = useState<string>();
+  useEffect(() => { const h = (e: Event) => { const d = (e as CustomEvent).detail; set({ geoMode: d.mode, geoWalking: d.walking }); setGeoRegion(d.region); }; geoBus.addEventListener('state', h); return () => geoBus.removeEventListener('state', h); }, []);
   useEffect(() => { const kd = (e: KeyboardEvent) => { const t = e.target as HTMLElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) { if (e.key === 'Escape') t.blur(); return; } const k = e.key.toLowerCase(); const hb = state.char?.hotbar; if (k >= '1' && k <= '6' && hb && state.inScene) { const id = hb[+k - 1]; if (id) cast(id); } else if (k === ' ' && state.inScene) { e.preventDefault(); act('auto', { on: !view.snap?.me.auto }); } else if (k === 'i') nav('inv'); else if (k === 'c') nav('char'); else if (k === 'q') nav('quest'); else if (k === 'escape') { set({ panel: null, dialog: null, navPanel: '' }); setMore(false); } else if (k === 'enter') set({ hudChat: true }); }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, []);
   const nav = (p: string) => { audio.sfx('click'); if (p === 'map') { set({ panel: null, navPanel: '', dialog: null }); setMore(false); geoDo('recenter'); return; } if (p === 'more') { setMore(m => !m); return; } setMore(false); if (p === 'house') act('houseList'); if (p === 'guild') act('guildInfo'); if (p === 'social') act('friends'); if (p === 'market') act('market', { kind: 'ah' }); set({ panel: state.panel === p ? null : p, navPanel: p, dialog: null }); };
   const more2 = (p: string) => { setMore(false); if (p === 'map2') { set({ panel: 'map', navPanel: 'more' }); return; } if (p === 'opt') { set({ panel: 'opt', navPanel: 'more' }); return; } nav(p); set({ navPanel: 'more' }); };
@@ -29,10 +30,10 @@ export function Game() {
   const tgtMob = me?.target ? snap?.mobs.find((m: any) => m.uid === me.target) : null; const tgtPl = me?.target && !tgtMob ? snap?.players.find((p: any) => p.id === me.target) : null;
   const inCombat = inScene && !!(me?.combat || tgtMob);
   const pots = char.inventory.filter(i => i.id.startsWith('pot_hp')).reduce((s, i) => s + i.qty, 0);
-  const locName = LOCS[state.loc]?.name || ''; const eq = Object.fromEntries(Object.entries(char.equipment).map(([k, v]) => [k, v!.id]));
+  const locName = geoRegion ?? (geoMode === 'gps' ? 'Standort wird ermittelt' : LOCS[state.loc]?.name || ''); const eq = Object.fromEntries(Object.entries(char.equipment).map(([k, v]) => [k, v!.id]));
   return <div className="app" style={{ zoom: scale }} onPointerDown={() => audio.unlock()}>
     {inScene ? <GameCanvas /> : null}
-    <GeoScreen hidden={inScene} />
+    <GeoScreen hidden={inScene} controlsBlocked={!!(panel || dialog || chatOpen || travel || died || more || house)} />
     {/* Obere Leiste: Charakter kompakt */}
     {!inScene && <div className="hudc"><img src={portraitUrl(char.cls, char.look, eq, 64)} alt="" />
       <div className="bars"><div className="nm"><span>{char.name}</span><span className="lvl">Lv {char.level}{char.prestige ? `★${char.prestige}` : ''}</span></div>
@@ -42,7 +43,7 @@ export function Game() {
         <div className="sub"><span>{cb.res} · {fmt(char.gold)} Gold</span><span>{locName}</span></div></div></div>}
     {inScene && <div className="scenebar"><div className="pill-btn" style={{ borderColor: '#5ef2ff' }}>{LOCS[state.loc]?.name} · Kampfansicht</div><button className="pill-btn warn" onClick={() => net.send('geoFlee')}>Zur Karte</button></div>}
     {/* Chat: standardmäßig eingeklappt */}
-    {chatOpen ? <Chat /> : <button className="pill-btn" style={{ position: 'absolute', left: 'calc(8px + var(--sal))', bottom: 'calc(var(--navh) + 60px + var(--sab))', zIndex: 9, pointerEvents: 'auto' }} onClick={() => set({ hudChat: true })}>Chat</button>}
+    {chatOpen ? <Chat /> : <button className="pill-btn" style={{ position: 'absolute', right: 'calc(8px + var(--sar))', bottom: 'calc(var(--navh) + 8px + var(--sab))', zIndex: 9, pointerEvents: 'auto' }} onClick={() => set({ hudChat: true })}>Chat</button>}
     {/* Kartenmodus: Bewegungsleiste */}
     {!inScene && <div className="pills"><div style={{ display: 'flex', gap: 8 }}><button className="pill-btn" onClick={() => geoDo('toggleMode')}>{geoMode === 'gps' ? 'Zu virtuell wechseln' : 'GPS nutzen'}</button>{walking && <button className="pill-btn warn" onClick={() => geoDo('stop')}>Stopp</button>}</div><span style={{ width: 0 }} /></div>}
     {/* Kampfleiste: nur im Kampf */}
@@ -63,7 +64,7 @@ export function Game() {
     {panel === 'opt' && <div className="win c1" style={{ maxHeight: '86vh' }}><header><span>⚙ Menü</span><button className="btn sm x" onClick={() => set({ panel: null })}>✕</button></header><div className="body"><OptionsBody ingame /><div className="hr" /><div className="row wrap"><button className="btn" onClick={() => { geoDo('wipe'); }}>Meine Standortdaten löschen</button><button className="btn" onClick={async () => { set({ panel: null }); await logoutChar(); }}>Charakter wechseln</button><button className="btn" onClick={async () => { if (await logoutChar()) set({ screen: 'title' }); }}>Zum Titelbildschirm</button></div></div></div>}
     {dialog && <Dialog />}
     {travel && <Travel />}{died && <Died />}
-    {conn !== 'ok' && <div className="overlay"><div className="b">Verbindung unterbrochen…</div><div className="dim">Verbinde neu, dein Fortschritt ist gespeichert.</div><div className="prog"><i style={{ width: '60%', animation: 'glow 1s infinite' }} /></div></div>}
+    {conn !== 'ok' && <div className="connection-status" role="status">Verbindung unterbrochen · erneuter Versuch</div>}
   </div>;
 }
 export const goalText = (g: any) => g.k === 'kill' ? `Besiege ${g.t === '*' ? 'Gegner' : MOBS[g.t]?.name}` : g.k === 'boss' ? `Besiege ${MOBS[g.t]?.name}` : g.k === 'collect' ? `Sammle ${ITEMS[g.t]?.name}` : g.k === 'craft' ? `Stelle her: ${g.t === '*' ? 'Gegenstände' : ITEMS[g.t]?.name}` : g.k === 'gather' ? 'Sammle Ressourcen' : g.k === 'visit' ? `Besuche ${LOCS[g.t]?.name}` : g.k === 'dungeon' ? `Besiege Gegner: ${LOCS[g.t]?.name}` : 'Sprich mit NPC';

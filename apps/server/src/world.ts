@@ -7,7 +7,7 @@ import { questEvent, autoStartHidden } from './quests';
 import { setArrive, inPvp } from './game';
 export function joinLoc(p: Player, to: string, x?: number, y?: number, from?: string) {
   const old = G.locs.get(p.loc); const l = G.locs.get(to)!; const wasPvp = inPvp(p); if (old) old.players.delete(p); leaveHouseSilent(p);
-  p.loc = to; p.c.loc = to; l.players.add(p); p.travel = null; p.inScene = false; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null;
+  p.loc = to; p.c.loc = to; l.players.add(p); p.travel = null; p.inScene = false; p.mapEncounter = undefined; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null;
   const back = from ? LOCS[to].links.find(k => k.to === from) : null; p.x = p.dx = x ?? (back ? clamp(back.x < 50 ? back.x + 8 : back.x - 8, 6, 94) : 50); p.y = p.dy = y ?? (back ? clamp(back.y < 60 ? 62 : back.y - 6, 58, 90) : 78);
   if (!p.c.discovered.includes(to)) { p.c.discovered.push(to); sys(p, `Neuer Ort entdeckt: ${LOCS[to].name}`, 'quest'); }
   if (LOCS[to].kind === 'city') p.c.choices.respawn = to;
@@ -17,6 +17,7 @@ export function joinLoc(p: Player, to: string, x?: number, y?: number, from?: st
   if (LOCS[to].pvp) sys(p, '⚠ PvP-Zone: Spieler können hier angegriffen werden. Werte sind normalisiert.', 'warn');
 }
 export function startTravel(p: Player, to: string): string | null {
+  if (p.mapEncounter) return 'Verlasse zuerst die Kampfansicht';
   const l = LOCS[p.loc]; const link = l.links.find(k => k.to === to); if (!link) return 'Kein direkter Weg'; if (p.travel) return 'Du reist bereits'; if (p.dead) return 'Du bist tot';
   if (p.combatUntil > now()) return 'Im Kampf kannst du nicht reisen'; if (p.duel) return 'Im Duell nicht möglich'; if (p.c.level < Math.max(1, LOCS[to].lvl[0] - 12) && false) return 'Zu gefährlich';
   const mount = p.c.equipment.mount; const sp = mount ? (mount.id === 'mount_board' ? .25 : mount.id === 'mount_horse' ? .4 : mount.id === 'mount_wolf' ? .5 : .65) : 0;
@@ -33,4 +34,4 @@ export function leaveHouseSilent(p: Player) { if (!p.houseId) return; const occ 
 export function setLocSilent(p: Player, to: string) { if (p.loc === to || !G.locs.get(to)) return; G.locs.get(p.loc)?.players.delete(p); p.loc = to; p.c.loc = to; G.locs.get(to)!.players.add(p); p.dirty = true; }
 /** Kampf-/Dungeonansicht starten (Szene wird im Client angezeigt). */
 export function enterScene(p: Player, locId: string) { setLocSilent(p, locId); p.inScene = true; p.x = p.dx = 50; p.y = p.dy = 78; p.target = null; p.auto = false; p.autoFarm = null; send(p, { t: 'scene', on: true, loc: locId }); }
-export function exitScene(p: Player) { p.inScene = false; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null; send(p, { t: 'scene', on: false }); }
+export function exitScene(p: Player) { p.inScene = false; p.mapEncounter = undefined; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null; send(p, { t: 'scene', on: false }); }

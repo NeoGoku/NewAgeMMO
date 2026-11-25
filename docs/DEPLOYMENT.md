@@ -13,3 +13,9 @@ Alternativen (nicht geprüft/Kreditkarte): Fly.io, Koyeb, Oracle Always Free VM 
 Solo-Modus: kompletter Server im Browser-Worker, Spielstand lokal (IndexedDB).
 ## Datenschutz/Sicherheit
 Siehe README „Reale Erde“; Standortdaten werden nicht dauerhaft präzise gespeichert (nur auf ~100 m gerundet im Charakter, löschbar).
+
+
+## Karten und Android-Updates
+- `OSM_OVERPASS_URL` setzt auf dem Online-Server den Overpass-Endpunkt. Standard ist `https://overpass-api.de/api/interpreter`. Ein leerer Wert deaktiviert den Import. Anfragen verwenden gerundete Regionsgrenzen und einen begrenzten Cache im Arbeitsspeicher.
+- GitHub Pages benötigt keinen Spielserver für den Solo-Modus. Browser-Kartengrundlagen werden bei Bedarf von OpenStreetMap, OpenFreeMap oder NASA GIBS bezogen. Details stehen in [ASSET_LICENSES.md](ASSET_LICENSES.md).
+- Für Android-Updates über dieselbe Installation den vorhandenen Signierschlüssel wiederverwenden. Das optionale Actions-Secret `NAM_ANDROID_DEBUG_KEYSTORE_B64` ist in [apps/android/README.md](../apps/android/README.md) dokumentiert.

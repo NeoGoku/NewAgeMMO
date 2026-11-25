@@ -3,6 +3,8 @@ import { ATTRS, ATTR_NAMES, SLOTS, SLOT_NAMES, RARITY_COLORS, RARITY_MULT, deriv
 import { ITEMS, SKILLS, CLASSES, LOCS, NPCS, MOBS, QUESTS, FACTIONS, ELEMENT_COLOR } from '@nam/game-data';
 import { state, set, useS, toast } from '../store'; import { act, call, view } from '../game'; import { audio } from '../audio'; import { drawCharacter, drawBackground } from '../render';
 import { Win, ItemSlot, Icon, Bar, Tabs, skillIcon, fmt, ItemTip } from './kit'; import { goalText } from './Game';
+import { geoDo } from '../geo/bus';
+import { questCategory, type QuestPinRole } from '../geo/quest-map';
 export function Inventory() {
   const c = useS(s => s.char)!; const [sel, setSel] = useState<string>(''); const [f, setF] = useState('all'); const it = c.inventory.find(i => i.uid === sel); const d = it ? ITEMS[it.id] : null; const eq = d?.slot ? c.equipment[d.slot] : null;
   const list = c.inventory.filter(i => f === 'all' || (f === 'gear' ? ['weapon', 'armor', 'accessory', 'mount'].includes(ITEMS[i.id].type) : f === 'use' ? ITEMS[i.id].type === 'consumable' : ['material', 'misc', 'tool', 'egg', 'furniture'].includes(ITEMS[i.id].type)));
@@ -51,12 +53,52 @@ export function MapPanel() {
       <div className="row wrap">{sel === loc ? <span className="ok">📍 Du bist hier</span> : direct ? <button className="btn pri sm" onClick={async () => { const r = await call('travel', { to: sel }); if (r) set({ panel: null }); }}>Reisen ({direct.sec}s)</button> : null}{tele && <button className="btn sm" onClick={async () => { const r = await call('teleport', { to: sel }); if (r) set({ panel: null }); }}>Teleport ({d.tele} Gold)</button>}{!direct && !tele && sel !== loc && <span className="dim sm">Nur über Nachbarorte erreichbar{known ? ' (Teleporter-NPC in Städten)' : ''}.</span>}</div></div></Win>;
 }
 export function QuestPanel() {
-  const c = useS(s => s.char)!; const [tab, setTab] = useState('act'); const act_ = Object.entries(c.quests).map(([id, s]) => ({ q: QUESTS[id], s })).filter(x => x.q); const loc = useS(s => s.loc);
-  const avail = Object.values(QUESTS).filter(q => q.type !== 'hidden' && c.level >= q.lvl - 3 && !c.quests[q.id] && !c.questsDone.includes(q.id) && (!q.prereq || c.questsDone.includes(q.prereq)));
-  const R = (q: any) => <div className="xs dim">Belohnung: {q.scale ? 'skaliert mit Level' : `${q.reward.exp || 0} EXP, ${q.reward.gold || 0} Gold`}{q.reward.items?.map((i: any) => `, ${ITEMS[i.id].name}`).join('')}{q.reward.stat ? `, +${q.reward.stat} Attributpunkte` : ''}{q.reward.train ? `, ${q.reward.train} Training` : ''}</div>;
-  return <Win title="Quests" icon="📜" onClose={() => set({ panel: null })} w={700}><Tabs tabs={[['act', `Aktiv (${act_.length})`], ['av', `Verfügbar (${avail.length})`], ['done', `Erledigt (${c.questsDone.length})`]]} v={tab} set={setTab} /><div className="col scroll" style={{ maxHeight: 420 }}>
-    {tab === 'act' && (act_.length ? act_.map(({ q, s }) => <div key={q.id} className="card col"><div className="row"><b className="grow">{q.name}</b><span className="pill">{q.type}</span>{s.state === 'done' && <span className="pill ok">Abgabebereit</span>}</div><div className="sm dim">{q.offer}</div>{q.goals.map((g, i) => <div key={i} className="row sm"><span className={s.prog[i] >= g.n ? 'ok' : ''}>{s.prog[i] >= g.n ? '✔' : '◻'} {g.label || goalText(g)}</span><span className="grow" /><b>{s.prog[i]}/{g.n}</b></div>)}<div className="xs">{s.state === 'done' ? `Abgeben bei: ${NPCS[q.turnin].name} (${LOCS[NPCS[q.turnin].loc].name})` : `Quelle: ${q.giver ? NPCS[q.giver]?.name : 'Entdeckung'}`}</div>{R(q)}<div className="row">{[...new Set([NPCS[q.turnin].loc])].map(l => <button key={l} className="btn sm" onClick={() => set({ tracked: q.id, panel: 'map' })}>Auf Karte</button>)}{q.type !== 'main' && <button className="btn sm dng" onClick={() => call('questAbandon', { id: q.id })}>Abbrechen</button>}</div></div>) : <div className="dim">Keine aktiven Quests. Sprich mit NPCs mit ❗ über dem Kopf – z. B. Archivar Orwin in Aurelia.</div>)}
-    {tab === 'av' && avail.map(q => <div key={q.id} className="card"><div className="row"><b className="grow">{q.name}</b><span className="pill">Lv {q.lvl}</span><span className="pill">{q.type}</span></div><div className="sm dim">{q.offer}</div><div className="xs">Annehmen bei: {q.giver ? `${NPCS[q.giver]?.name} – ${LOCS[NPCS[q.giver]?.loc]?.name}` : 'automatisch'}</div>{R(q)}</div>)}
-    {tab === 'done' && c.questsDone.map(id => <div key={id} className="card row"><span className="ok">✔</span><b>{QUESTS[id]?.name}</b>{c.choices[id] && <span className="pill">{c.choices[id]}</span>}</div>)}</div></Win>;
+  const c = useS(s => s.char)!;
+  const inScene = useS(s => s.inScene);
+  const [tab, setTab] = useState('act');
+  const [selected, setSelected] = useState('');
+  const active = Object.keys(c.quests).map(id => QUESTS[id]).filter(Boolean);
+  const available = Object.values(QUESTS).filter(q => q.type !== 'hidden' && c.level >= q.lvl - 3 && !c.quests[q.id] &&
+    !c.questsDone.includes(q.id) && (!q.prereq || c.questsDone.includes(q.prereq)));
+  const list = tab === 'act' ? active : tab === 'av' ? available : c.questsDone.map(id => QUESTS[id]).filter(Boolean);
+  const quest = list.find(q => q.id === selected);
+  const progress = quest && c.quests[quest.id];
+  const role: QuestPinRole = progress?.state === 'done' ? 'turnin' : progress ? 'objective' : 'giver';
+  const showMap = (navigate: boolean) => {
+    if (!quest) return;
+    set({ tracked: quest.id, panel: null, navPanel: '' });
+    geoDo('quest', { id: quest.id, role, navigate });
+  };
+  return <Win title="Quests" icon="📜" onClose={() => set({ panel: null })} w={700}>
+    <Tabs tabs={[['act', `Aktiv (${active.length})`], ['av', `Verfügbar (${available.length})`], ['done', `Erledigt (${c.questsDone.length})`]]}
+      v={tab} set={value => { setTab(value); setSelected(''); }} />
+    {quest ? <div className="card col">
+      <div className="row"><button className="btn sm" onClick={() => setSelected('')}>Zur Liste</button><h3 className="grow">{quest.name}</h3></div>
+      <div>{questCategory[quest.type]} · Stufe {quest.lvl}{progress?.state === 'done' && ' · Abgabebereit'}</div>
+      {(quest.desc || quest.offer) && <p>{quest.desc || quest.offer}</p>}
+      {quest.goals.map((goal, i) => <div key={i} className="row sm">
+        <span className="grow">{goal.label || goalText(goal)}</span>
+        <b>{progress ? (progress.prog[i] ?? 0) + '/' + goal.n : goal.n}</b>
+      </div>)}
+      {quest.giver && NPCS[quest.giver] && <div className="dim sm">Questgeber · {NPCS[quest.giver].name}</div>}
+      {NPCS[quest.turnin] && <div className="dim sm">Abgabe · {NPCS[quest.turnin].name}</div>}
+      <div className="dim sm">Belohnung · {quest.scale ? 'skaliert mit Level' : `${quest.reward.exp || 0} EXP, ${quest.reward.gold || 0} Gold`}
+        {quest.reward.items?.map(i => ', ' + (ITEMS[i.id]?.name ?? i.id)).join('')}
+        {quest.reward.stat ? ', +' + quest.reward.stat + ' Attributpunkte' : ''}
+        {quest.reward.train ? ', +' + quest.reward.train + ' Trainings-EXP' : ''}
+      </div>
+      <div className="row wrap">
+        <button className="btn sm" disabled={inScene} onClick={() => showMap(false)}>Auf Karte anzeigen</button>
+        {tab !== 'done' && <button className="btn sm pri" disabled={inScene} onClick={() => showMap(true)}>Navigieren</button>}
+        {progress && quest.type !== 'main' && <button className="btn sm dng" onClick={() => call('questAbandon', { id: quest.id })}>Abbrechen</button>}
+      </div>
+    </div> : <div className="col scroll" style={{ maxHeight: '52vh' }}>
+      {list.length === 0 && <div className="dim">{tab === 'act' ? 'Keine aktiven Quests. Verfügbare Quests findest du im nächsten Reiter.' : 'Keine Quests in dieser Kategorie.'}</div>}
+      {list.map(q => <button key={q.id} type="button" className="btn row" style={{ textAlign: 'left' }} onClick={() => setSelected(q.id)}>
+        <b className="grow">{q.name}</b><span className="pill">{questCategory[q.type]}</span>
+        {c.quests[q.id]?.state === 'done' && <span className="pill ok">Abgabebereit</span>}
+      </button>)}
+    </div>}
+  </Win>;
 }
 void ItemSlot; void Icon; void Bar; void drawBackground; void toast; void CLASS_BASE;

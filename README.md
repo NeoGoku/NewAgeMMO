@@ -7,10 +7,10 @@ Kostenloses, grafikbasiertes Point-and-Click-MMORPG im alternativen Jahr 2030 (s
 |---|---|
 | **Browser (GitHub Pages)** | https://neogoku.github.io/NewAgeMMO/ |
 | **Windows-PWA** | Link oben in Edge/Chrome öffnen → Adressleiste „App installieren“ (Start → eigenes Fenster) |
-| **Android-APK** | [APK v0.2.6](https://github.com/NeoGoku/NewAgeMMO/releases/download/v0.2.6/NewAgeMMO-v0.2.6.apk) |
-| **Releases** | [Releases](https://github.com/NeoGoku/NewAgeMMO/releases) · [Web-ZIP v0.2.6](https://github.com/NeoGoku/NewAgeMMO/releases/download/v0.2.6/NewAgeMMO-web-v0.2.6.zip) |
+| **Android-APK** | [Aktueller Release](https://github.com/NeoGoku/NewAgeMMO/releases/latest), Datei `NewAgeMMO-*.apk` |
+| **Releases** | [Release-Archiv](https://github.com/NeoGoku/NewAgeMMO/releases) · Web-ZIP im jeweiligen Release |
 
-> Hinweis zur Verfügbarkeit: Die Links werden erst aktiv, nachdem (1) GitHub Pages einmalig auf „GitHub Actions“ gestellt ist (Settings → Pages → Source) und (2) der Workflow auf einem `v*`-Tag bzw. `main` gelaufen ist. Siehe [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+> Vor einem APK-Wechsel mit anderer Signatur den Solo-Spielstand in den Titeloptionen exportieren. Details zum Upgrade stehen in der [Android-Dokumentation](apps/android/README.md).
 
 ### Spielmodi – ehrlich erklärt
 - **Solo (Standard auf GitHub Pages/APK):** Der komplette Spielserver läuft lokal im Browser (Web Worker, Spielstand in IndexedDB). Sofort spielbar ohne Server, aber ohne andere Spieler.
@@ -33,8 +33,15 @@ docker compose -f infrastructure/docker-compose.yml up --build   # http://localh
 
 Der Server liefert den gebauten Web-Client (`apps/web/dist`) mit aus. Die APK nutzt eine **konfigurierbare Serveradresse** (Optionen → Serveradresse, z. B. `wss://dein-server`).
 
-## Reale Erde (Geo)
-Die Hauptansicht ist eine MapLibre-Karte mit OpenStreetMap-Kacheln. Über die Modusanzeige im HUD wechselst du zwischen GPS und virtueller Bewegung. Spielorte sind real verankert (Aurelia = Berlin, Port Nocturne = Hamburg, Kristallspitze = Zürich, Arena/Valdris = Rom, Himmelsturm = Zugspitze, Void-Herz = Himalaya …). Monster, Ressourcen, Dungeoneingänge und Quellen entstehen dynamisch je Rasterzelle und Zeitfenster (Stufe steigt mit Entfernung zu Städten). Bewegung per **GPS** (echte Schritte geben Trainings-EXP, max. 10 km/Tag) oder **virtuell** (Tippen auf die Karte). Datenschutz: Opt-in, andere sehen nur ≈100 m gerundete Positionen, präzise Position nur im Arbeitsspeicher, „Meine Standortdaten löschen“ jederzeit. Manipulationsschutz: serverseitige Geschwindigkeits-/Teleport-/Genauigkeitsprüfung mit Sperre nach wiederholten Verstößen. PostGIS wird im PostgreSQL-Betrieb für Geo-Objekte genutzt (Migration `003_postgis.sql`).
+## Reale Erde
+
+Die Weltkarte ist die Hauptansicht. Der virtuelle Modus unterstützt Tippen und einen Touch-Joystick. GPS nutzt die bestätigte Geräteposition. Kartenhelligkeit, Kartentyp, Zoom, Drehung und Neigung bleiben gespeichert. Die Satellitenansicht bietet eine globale Übersicht; für Straßen und Gebäude sind Standard und 3D vorgesehen. Die vorhandenen Spielorte bleiben verankert, während regionale NPCs, Monster, Eliten, Ressourcen und Bosse auch außerhalb dieser Orte erscheinen. Der Online-Server kann öffentliche Orientierungspunkte aus OpenStreetMap ergänzen.
+
+Über die Questdetails lassen sich Questgeber, Zielgebiet und Abgabe auf der Karte verfolgen. Die GPS-Navigation zeigt die Richtung zum Ziel als Luftlinie. Im virtuellen Modus startet sie eine Route innerhalb der verfügbaren Reichweite.
+
+## Solo-Spielstand sichern
+
+Im Titelmenü unter **Optionen → Solo-Spielstand** lässt sich die lokale Datenbank exportieren und nach Bestätigung wiederherstellen. Browserprofile, Browsersitzungen mit eigener Speicherung und die Android-App haben getrennte Daten. Für einen Wechsel zwischen solchen Installationen dient die Sicherungsdatei. Sie enthält lokale Kontodaten und sollte privat aufbewahrt werden. Online-Spielstände werden auf dem gewählten Server verwaltet.
 
 ## Aufbau
 

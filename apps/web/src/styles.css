@@ -55,7 +55,7 @@ input[type=range]{width:100%;accent-color:var(--cy)}
 .hudc .sub{font-size:11px;color:#7fa3b8;display:flex;gap:8px;justify-content:space-between}
 .hudc .lvl{background:#1ee8ff22;border:1px solid #1ee8ff66;border-radius:8px;padding:0 6px;font-size:11px;color:#8ff4ff;flex:none}
 .hudbtn{position:absolute;right:calc(8px + var(--sar));top:calc(8px + var(--sat));z-index:8;background:#04101ce6;border:1px solid #1ee8ff66;border-radius:12px;color:#cdeeff;min-height:40px;padding:0 12px;font:inherit;pointer-events:auto}
-.pills{position:absolute;left:calc(8px + var(--sal));right:calc(8px + var(--sar));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:8px;align-items:center;justify-content:space-between;pointer-events:none}
+.pills{position:absolute;left:max(calc(108px + var(--sal)),calc(50% - 92px));right:calc(68px + var(--sar));bottom:calc(var(--navh) + 8px + var(--sab));z-index:9;display:flex;gap:8px;align-items:center;justify-content:space-between;pointer-events:none}
 .pills>*{pointer-events:auto}
 .pill-btn{background:#04101ce6;border:1px solid #1ee8ff66;border-radius:99px;color:#cdeeff;min-height:38px;padding:0 14px;font:inherit;font-size:13px}
 .pill-btn.warn{border-color:#ff6b7a;color:#ffb3bb}
@@ -75,3 +75,6 @@ input[type=range]{width:100%;accent-color:var(--cy)}
 
 .geo .map{overflow:hidden}
 .geo .map::after{content:'';position:absolute;inset:0;background:linear-gradient(#0a2236aa,#04070dcc);pointer-events:none;mix-blend-mode:multiply}
+
+.connection-status{position:absolute;top:calc(132px + var(--sat));left:50%;translate:-50% 0;z-index:17;width:max-content;max-width:calc(100% - 20px);background:#1f2532ee;border:1px solid #ffbb64;border-radius:10px;padding:8px 12px;pointer-events:none}
+.client-update{position:fixed;right:calc(10px + var(--sar));top:calc(10px + var(--sat));z-index:60}

@@ -1,6 +1,6 @@
 import { pendingReward, saveCharacter } from './character-save';
 import { WriteOrder } from './write-order';
-import { NAME_RE, CLASS_IDS, BAL, derive, type Look, type ClassId } from '@nam/shared';
+import { NAME_RE, CLASS_IDS, BAL, GEO, derive, type Look, type ClassId } from '@nam/shared';
 import { validateData, LOCS, NPCS } from '@nam/game-data';
 import type { Store } from './store'; import { G, now, send, sys, toLoc, uid, type Player, type Account } from './state';
 import { initWorld, worldTick, respawnAll, worldEvent } from './game'; import { newChar, recalc, summary, invAdd } from './chars';
@@ -26,7 +26,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
     const connectionId = uid('conn');
     send({ online: true, ws } as any, { t: 'hello', v: 1, server: 'NewAgeMMO', time: now() });
     ws.on('message', (raw) => { const t = now(); conn.tokens = Math.min(60, conn.tokens + (t - conn.tokAt) / 1000 * 30); conn.tokAt = t; if (conn.tokens < 1) return; conn.tokens--; G.stats.msgs++; let m: any; try { m = JSON.parse(String(raw)); } catch { return; } if (!m || typeof m.t !== 'string') return; void messages.run(connectionId, async () => {
-      if (!stopping && ws.readyState === 1) await onMsg(conn, m);
+      if (!stopping && ws.readyState === 1) await onMsg(conn, m, t);
     }).catch(e => {
       log('error', { msg: String(e?.stack || e).slice(0, 300) });
       reply(conn, m, 'Serverfehler beim Speichern oder Verarbeiten');
@@ -39,7 +39,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
     });
   }
   const reply = (conn: Conn, m: any, r: any) => { const out = typeof r === 'string' ? { t: 'err', rid: m.rid, err: r } : { t: 'ok', rid: m.rid, ...(r && typeof r === 'object' ? r : {}) }; conn.ws.readyState === 1 && conn.ws.send(JSON.stringify(out)); };
-  async function onMsg(conn: Conn, m: any) {
+  async function onMsg(conn: Conn, m: any, receivedAt: number) {
     const ws = conn.ws; const R = (r: any) => reply(conn, m, r);
     if (m.t === 'register' || m.t === 'login' || m.t === 'resume') {
       if (conn.p) return R('Zuerst Charakter abmelden');
@@ -108,10 +108,10 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
       case 'admin': { if (!conn.acc.admin) return R('Keine Berechtigung'); return R(adminCmd(m)); }
     }
     const p = conn.p; if (!p?.online || G.players.get(p.id) !== p || p.ws !== ws) return R('Kein Charakter aktiv'); p.lastAct = now();
-    const h = H[m.t]; if (!h) return R('Unbekannter Befehl: ' + m.t); let res: any; try { res = h(p, m); } catch (e: any) { log('handler_error', { t: m.t, e: String(e?.stack || e).slice(0, 300) }); return R('Serverfehler'); }
+    const h = H[m.t]; if (!h) return R('Unbekannter Befehl: ' + m.t); let res: any; try { res = h(p, m, receivedAt); } catch (e: any) { log('handler_error', { t: m.t, e: String(e?.stack || e).slice(0, 300) }); return R('Serverfehler'); }
     const saving = pendingReward(p);
     if (saving) await saving;
-    if (!(typeof res === 'string')) { if (!NO_CHAR.has(m.t) || p.dirty) send(p, { t: 'char', c: p.c }); }
+    if (typeof res !== 'string' && m.t !== 'geoSteer' && (!NO_CHAR.has(m.t) || p.dirty)) send(p, { t: 'char', c: p.c });
     if (m.rid !== undefined) R(res === undefined || res === null ? {} : res);
   }
   function charList(acc: Account) { return [...G.chars.values()].filter(c => c.accountId === acc.id).map(summary); }
@@ -127,7 +127,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number } 
     return 'Unbekannter Admin-Befehl';
   }
   const timers = [
-    setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, 1000),
+    setInterval(() => { try { geoTick(); } catch (e: any) { log('geo_error', { e: String(e?.stack || e).slice(0, 300) }); } }, GEO.steerTickMs),
     setInterval(() => { try { worldTick(); } catch (e: any) { log('tick_error', { e: String(e?.stack || e).slice(0, 400) }); } }, BAL.tickMs),
     setInterval(() => {
       for (const p of G.players.values()) {

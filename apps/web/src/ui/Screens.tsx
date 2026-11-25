@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CLASS_IDS, CLASS_BASE, ATTRS, ATTR_NAMES, NAME_RE, type ClassId, type Look } from '@nam/shared'; import { CLASSES } from '@nam/game-data';
 import { drawBackground, drawCharacter, portraitUrl, drawWeather } from '../render'; import { audio } from '../audio';
-import { state, set, useS, toast, saveSettings } from '../store'; import { net } from '../net'; import { authenticate, tryResume, enterGame, logoutAccount, applySettings, quit, call } from '../game';
+import { state, set, useS, loadToken, saveSettings, saveToken } from '../store';
+import { isSoloServer, net } from '../net';
+import { exportSoloBackup, importSoloBackup } from '../solo/idbstore';
+import { parseSoloBackup } from '../solo/backup';
+import { authenticate, tryResume, enterGame, logoutAccount, applySettings, quit, call } from '../game';
 import { Win, Icon, Bar, skillIcon } from './kit';
 function useCanvas(draw: (c: CanvasRenderingContext2D, w: number, h: number, t: number) => void, deps: any[] = []) {
   const ref = useRef<HTMLCanvasElement>(null); const fn = useRef(draw); fn.current = draw;
@@ -67,17 +71,125 @@ export function CharCreate() {
       {err && <div className="err">{err}</div>}<button className="btn pri" disabled={busy} onClick={create}>✔ Charakter erstellen (Platz {slot + 1})</button><button className="btn sm" onClick={() => set({ screen: 'chars' })}>← Abbrechen</button></div></div></div></div>;
 }
 const ONLINE_DEFAULT = ((import.meta as any).env?.VITE_DEFAULT_SERVER as string) || (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname.endsWith('github.io') ? 'newagemmo.onrender.com' : location.host);
+const VOLUMES = [['master', 'Gesamtlautstärke'], ['music', 'Musik'], ['ambience', 'Umgebungsgeräusche'], ['sfx', 'Soundeffekte']] as const;
+
+interface CapacitorBackup {
+  isPluginAvailable(name: string): boolean;
+  Plugins: {
+    Filesystem: {
+      writeFile(options: { path: string; data: string; directory: 'CACHE'; encoding: 'utf8' }): Promise<{ uri: string }>;
+    };
+    Share: { share(options: { title: string; files: string[] }): Promise<unknown> };
+  };
+}
+
+async function saveBackupFile(json: string) {
+  const filename = 'newagemmo-solo-' + new Date().toISOString().slice(0, 10) + '.json';
+  const capacitor = (window as Window & { Capacitor?: CapacitorBackup }).Capacitor;
+  if (capacitor?.isPluginAvailable('Filesystem') && capacitor.isPluginAvailable('Share')) {
+    const { Filesystem, Share } = capacitor.Plugins;
+    const { uri } = await Filesystem.writeFile({ path: filename, data: json, directory: 'CACHE', encoding: 'utf8' });
+    await Share.share({ title: 'NewAgeMMO-Solo-Sicherung', files: [uri] });
+    return;
+  }
+
+  const file = new File([json], filename, { type: 'application/json' });
+  if (capacitor && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file] });
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function SoloBackupOptions() {
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<{ name: string; json: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setStatus(null);
+    try { await action(); } catch (error) {
+      setStatus({ text: error instanceof Error ? error.message : 'Der Solo-Spielstand konnte nicht verarbeitet werden.', error: true });
+    } finally { setBusy(false); }
+  };
+
+  const download = () => run(async () => {
+    await net.closeSolo();
+    await saveBackupFile(await exportSoloBackup());
+    setStatus({ text: 'Die Solo-Sicherung wurde erstellt.' });
+  });
+
+  const choose = (file: File) => run(async () => {
+    setPending(null);
+    const json = await file.text();
+    parseSoloBackup(json);
+    setPending({ name: file.name, json });
+  });
+
+  const restore = () => {
+    if (!pending) return;
+    void run(async () => {
+      await net.closeSolo();
+      await importSoloBackup(pending.json);
+      saveToken('solo:', '');
+      if (isSoloServer(state.settings.server)) set({ token: '' });
+      setPending(null);
+      setStatus({ text: 'Solo-Spielstand wiederhergestellt. Anmelden kannst du dich mit dem Benutzernamen und Passwort aus der Sicherung.' });
+    });
+  };
+
+  return <section className="col" aria-label="Solo-Spielstand sichern">
+    <div className="b">Solo-Spielstand</div>
+    <div className="dim xs">Sichere deine lokalen Konten, Charaktere und ihren Fortschritt als Datei. Bewahre sie privat auf.</div>
+    <div className="row wrap">
+      <button className="btn sm" disabled={busy} onClick={download}>Sicherung exportieren</button>
+      <button className="btn sm" disabled={busy} onClick={() => input.current?.click()}>Sicherung auswählen</button>
+    </div>
+    <input ref={input} type="file" accept=".json,application/json" hidden onChange={e => {
+      const file = e.currentTarget.files?.[0];
+      e.currentTarget.value = '';
+      if (file) void choose(file);
+    }} />
+    {pending && <div className="card col">
+      <div>„{pending.name}“ ersetzt den gesamten Solo-Spielstand in diesem Browser.</div>
+      <div className="row wrap">
+        <button className="btn sm dng" disabled={busy} onClick={restore}>Solo-Spielstand ersetzen</button>
+        <button className="btn sm" disabled={busy} onClick={() => setPending(null)}>Abbrechen</button>
+      </div>
+    </div>}
+    {status && <div className={status.error ? 'err' : 'dim sm'} role={status.error ? 'alert' : 'status'}>{status.text}</div>}
+  </section>;
+}
+
 export function OptionsBody({ ingame }: { ingame?: boolean }) {
-  const s = useS(x => x.settings); const up = (p: Partial<typeof s>) => { Object.assign(state.settings, p); set({ settings: { ...state.settings } }); applySettings(); };
-  const Sl = ({ l, k }: { l: string; k: 'master' | 'music' | 'sfx' }) => <div><div className="row"><span className="grow">{l}</span><span className="dim">{Math.round(s[k] * 100)}%</span></div><input type="range" min={0} max={1} step={.05} value={s[k]} onChange={e => { up({ [k]: +e.target.value } as any); }} onPointerUp={() => audio.sfx('click')} /></div>;
-  return <div className="col"><Sl l="Gesamtlautstärke" k="master" /><Sl l="Musik" k="music" /><Sl l="Soundeffekte" k="sfx" />
+  const s = useS(x => x.settings);
+  const up = (p: Partial<typeof s>) => {
+    const settings = { ...state.settings, ...p };
+    set(settings.server === state.settings.server ? { settings } : { settings, token: loadToken(settings.server) });
+    applySettings();
+  };
+  return <div className="col">{VOLUMES.map(([key, label]) => <label key={key}>
+    <span className="row"><span className="grow">{label}</span><span className="dim" aria-hidden="true">{Math.round(s[key] * 100)}%</span></span>
+    <input type="range" min={0} max={1} step={.05} value={s[key]} onChange={e => up({ [key]: +e.target.value })}
+      onPointerUp={key === 'sfx' ? () => { audio.unlock(); audio.sfx('click'); } : undefined} />
+  </label>)}
     <div className="row"><span className="grow">Schadenszahlen anzeigen</span><button className={`btn sm${s.showDmg ? ' on' : ''}`} onClick={() => up({ showDmg: !s.showDmg })}>{s.showDmg ? 'An' : 'Aus'}</button></div>
     <div className="row"><span className="grow">Bildschirmwackeln</span><button className={`btn sm${s.shake ? ' on' : ''}`} onClick={() => up({ shake: !s.shake })}>{s.shake ? 'An' : 'Aus'}</button></div>
     <div className="row"><span className="grow">Grafikqualität (Partikel)</span><button className="btn sm" onClick={() => up({ quality: s.quality === 'high' ? 'low' : 'high' })}>{s.quality === 'high' ? 'Hoch' : 'Niedrig (Akku)'}</button></div>
     <div><div className="row"><span className="grow">Oberflächengröße</span><span className="dim">{Math.round(s.uiScale * 100)}%</span></div><input type="range" min={.8} max={1.4} step={.05} value={s.uiScale} onChange={e => up({ uiScale: +e.target.value })} /></div>
-    {!ingame && <div><div className="dim sm">Spielmodus</div><div className="row wrap"><button className={`btn sm${s.server.startsWith('solo') ? ' on' : ''}`} onClick={() => up({ server: 'solo:' })}>Solo (lokal, offline)</button><button className={`btn sm${s.server.startsWith('solo') ? '' : ' on'}`} onClick={() => up({ server: ONLINE_DEFAULT })}>Online (Multiplayer)</button></div><div className="dim xs">Solo: dein Spielstand liegt lokal im Browser (IndexedDB), kein Server nötig. Online: gemeinsame Welt mit anderen Spielern.</div><div className="dim sm">Serveradresse (WebSocket)</div><input type="text" value={s.server} onChange={e => up({ server: e.target.value.trim() })} placeholder="wss://dein-server.example" /></div>}
+    {!ingame && <div><div className="dim sm">Spielmodus</div><div className="row wrap"><button className={`btn sm${isSoloServer(s.server) ? ' on' : ''}`} onClick={() => up({ server: 'solo:' })}>Solo (lokal, offline)</button><button className={`btn sm${isSoloServer(s.server) ? '' : ' on'}`} onClick={() => up({ server: ONLINE_DEFAULT })}>Online (Multiplayer)</button></div><div className="dim xs">Solo: dein Spielstand liegt lokal im Browser (IndexedDB), kein Server nötig. Online: gemeinsame Welt mit anderen Spielern.</div><div className="dim sm">Serveradresse (WebSocket)</div><input type="text" value={s.server} onChange={e => up({ server: e.target.value.trim() })} placeholder="wss://dein-server.example" /></div>}
+    {!ingame && isSoloServer(s.server) && <SoloBackupOptions />}
     <button className="btn sm" onClick={() => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch { /* */ } }}>⛶ Vollbild</button>
     <div className="dim xs">Steuerung: Tippen/Klicken auf Boden = laufen · auf Gegner = angreifen · Skills 1–6 / Tasten 1–6 · Leertaste = Auto-Angriff · I Inventar, C Charakter, M Karte, Q Quests, Enter Chat.</div></div>;
 }
 export function OptionsScreen() { return <div className="app" style={{ background: 'radial-gradient(circle at 50% 30%,#16254a,#080c1a)' }}><div className="title"><div className="card col" style={{ width: 'min(440px,94vw)', background: 'var(--panel)', textAlign: 'left', maxHeight: '92vh', overflow: 'auto' }}><div className="b" style={{ fontSize: 20 }}>⚙ Optionen</div><OptionsBody /><button className="btn pri" onClick={() => { saveSettings(); set({ screen: 'title' }); }}>Fertig</button></div></div></div>; }
-void Bar; void skillIcon; void net; void toast;
+void Bar; void skillIcon;

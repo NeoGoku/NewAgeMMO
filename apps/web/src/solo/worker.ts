@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { createCore, type SockLike } from '../../../server/src/core';
-import { IdbStore } from './idbstore';
+import { IdbStore, withSoloLock } from './idbstore';
 
 let core: Awaited<ReturnType<typeof createCore>> | undefined;
 let message: ((data: string) => void) | undefined;
@@ -16,17 +16,26 @@ const sock: SockLike = {
 async function open() {
   const active = new Promise<void>(resolve => { release = resolve; });
   try {
-    await navigator.locks.request('newagemmo-solo', { ifAvailable: true }, async lock => {
+    await withSoloLock(async () => {
       if (sock.readyState !== 1) return;
-      if (!lock) throw new Error('Der Solo-Spielstand ist bereits in einem anderen Fenster geöffnet.');
-      core = await createCore(new IdbStore());
-      if (sock.readyState !== 1) return;
-      core.onConnection(sock, 'solo');
-      worker.postMessage({ t: 'ready' });
-      await active;
+      const store = new IdbStore();
+      try {
+        core = await createCore(store);
+        if (sock.readyState !== 1) {
+          await core.shutdown();
+          return;
+        }
+        core.onConnection(sock, 'solo');
+        worker.postMessage({ t: 'ready' });
+        await active;
+      } finally {
+        store.close();
+      }
     });
   } catch (error) {
     worker.postMessage({ t: 'fail', err: String(error) });
+  } finally {
+    worker.postMessage({ t: 'closed' });
   }
 }
 
@@ -41,7 +50,6 @@ worker.onmessage = async ({ data }) => {
       worker.postMessage({ t: 'fail', err: String(error) });
     } finally {
       release?.();
-      worker.postMessage({ t: 'closed' });
     }
   }
 };

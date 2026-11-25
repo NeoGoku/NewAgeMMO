@@ -1,5 +1,14 @@
 # Implementierungsstatus (ehrlich, Stand Alpha 0.1)
 
+
+## Smartphone-Integration
+
+- GPS verwendet bestätigte Gerätekoordinaten. Ohne GPS-Fix werden keine Berliner Spielobjekte angezeigt. Regionale Zellen erzeugen auch fern der gesetzten Spielorte NPCs, Ressourcen, Monster und Elitegegner.
+- Standard-, Satelliten- und 3D-Kartenansicht mit gespeicherter Kamera und Helligkeit. Monster verwenden animierte prozedurale Porträts, Kartenkämpfe zählen für Quests und kehren nach gespeicherter Belohnung zur Karte zurück.
+- Virtueller Joystick mit serverseitiger Geschwindigkeitsgrenze und Ablauf bei Eingabeausfall. Questdetails markieren Geber, Zielgebiet und Abgabe.
+- Solo-Backups behalten das vorhandene IndexedDB-Format und werden ausschließlich aus dem Titelmenü eingespielt. Der Service Worker bietet Updates am Titelbildschirm an. Audio trennt Musik, Umgebung und Effekte.
+- Offen bleiben Live-Nachweis aller Kartenquellen, Installation auf einem physischen Android-Gerät sowie persistentes PostGIS-POI-Lager. Für künftige APK-Updates über dieselbe Installation muss dieselbe Signatur verwendet werden.
+
 ## Persistenz auf dem Entwicklungsbranch
 - Kampf-Fortschritt und Logout werden nach erfolgreicher Speicherung bestätigt. Dateispeicher und PostgreSQL/PostGIS sind mit dem neuen Levelaufstieg-/Reconnect-Test geprüft. Solo-Worker und IndexedDB-Wiederherstellung sind im Chromium-Build unter `/NewAgeMMO/` geprüft.
 - Die Geräteprüfung und der Nachweis der Veröffentlichung dieses Stands stehen aus. Einzelne Dokumente werden geordnet geschrieben. Systemübergreifende Wirtschaftsaktionen benötigen weiterhin echte Mehrdokument-Transaktionen.
