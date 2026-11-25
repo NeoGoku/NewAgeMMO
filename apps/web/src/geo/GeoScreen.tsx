@@ -263,7 +263,7 @@ export function GeoScreen({ hidden, onClose }: { hidden?: boolean; onClose?: () 
       <div className="side">
         <button onClick={() => zoom(1)} aria-label="Hineinzoomen">＋</button>
         <button onClick={() => zoom(-1)} aria-label="Herauszoomen">−</button>
-        <button onClick={() => mapRef.current?.easeTo({ bearing: 0, pitch: 0 })} aria-label="Norden" style={{ transform: `rotate(${-bearing}deg)` }}>🧭</button>
+        <button onClick={() => mapRef.current?.easeTo({ bearing: 0, pitch: 0 })} aria-label="Norden" style={{ transform: `rotate(${-bearing}deg)` }}>N</button>
         <button className={follow ? 'on' : ''} onClick={() => { setFollow(f => !f); const p = myPos(); if (p && !follow) mapRef.current?.easeTo({ center: [p.lon, p.lat] }); }} aria-label="Folgen">◎</button>
       </div>
       {o && (
