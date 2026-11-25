@@ -101,7 +101,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   const persisted = makeStore();
   await persisted.init();
   const savedTrip = (await persisted.get<Character>('chars', c.id))?.geo?.trip;
-  ok(savedTrip?.id === route?.id && savedTrip?.points.length === 3 && savedTrip?.startedAt > 0, 'Reisestart speichert Geometrie und Serverzeit dauerhaft');
+  ok(savedTrip?.id === route?.id && savedTrip?.points.length === 3 && (savedTrip?.startedAt ?? 0) > 0, 'Reisestart speichert Geometrie und Serverzeit dauerhaft');
   await sleep(700);
   const beforeLogout = motion?.travel?.remainingM;
   ok(beforeLogout > 0 && beforeLogout < preview?.totalM, 'Virtuelle Reise folgt dem Routentakt');
