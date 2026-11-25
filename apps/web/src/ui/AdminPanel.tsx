@@ -1,18 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { AdminAuditEntry, AdminDashboard } from '@nam/shared';
+import { ACC_RE, type AdminAuditEntry, type AdminDashboard } from '@nam/shared';
 import { net } from '../net';
 import { set, toast, useS } from '../store';
 import { fmtT, Win } from './kit';
 
 const ACTION_LABEL: Record<AdminAuditEntry['action'], string> = {
   announce: 'Ankündigung', kick: 'Verbindung trennen', gold: 'Gold ändern', give: 'Gegenstand vergeben', respawn: 'Gegner zurücksetzen',
+  mute: 'Chat sperren', unmute: 'Chat freigeben', ban: 'Account sperren', unban: 'Account entsperren',
 };
+type ModerationCommand = 'kick' | 'mute' | 'unmute' | 'ban' | 'unban';
+interface Confirmation { cmd: ModerationCommand; label: string; payload: Record<string, string> }
 
 export function AdminPanel() {
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const [target, setTarget] = useState('');
-  const [confirmation, setConfirmation] = useState(false);
+  const [account, setAccount] = useState('');
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -52,6 +56,9 @@ export function AdminPanel() {
   }, [conn]);
 
   const player = dashboard?.players.find(p => p.id === target);
+  const accountName = account.trim();
+  const moderationTarget: Record<string, string> | null = ACC_RE.test(accountName) ? { account: accountName } : player ? { target: player.id } : null;
+  const moderationLabel = accountName || player?.name || '';
   const disabled = busy || conn !== 'ok';
   const close = () => set({ panel: null, navPanel: '' });
 
@@ -84,25 +91,47 @@ export function AdminPanel() {
           </label>
           <button type="submit" className="btn sm" disabled={disabled || !announcement.trim()}>An alle senden</button>
         </form>
-        <section className="card col" aria-label="Verbindungen moderieren">
+        <section className="card col" aria-label="Spieler moderieren">
           <label className="col">
             <strong>Online-Charakter</strong>
-            <select value={player ? player.id : ''} onChange={e => { setTarget(e.target.value); setConfirmation(false); }}>
+            <select value={player ? player.id : ''} onChange={e => { setTarget(e.target.value); setAccount(''); setConfirmation(null); }}>
               <option value="">Charakter auswählen</option>
               {dashboard.players.map(p => <option key={p.id} value={p.id}>{p.name} · Lv {p.level}</option>)}
             </select>
           </label>
-          {confirmation && player ? <>
-            <span>Verbindung von {player.name} trennen?</span>
+          <label className="col">
+            <strong>Accountname (auch offline)</strong>
+            <input value={account} maxLength={20} onChange={e => { setAccount(e.target.value); setTarget(''); setConfirmation(null); }} />
+          </label>
+          {confirmation ? <>
+            <span>{ACTION_LABEL[confirmation.cmd]} · {confirmation.label}?</span>
             <div className="row wrap">
               <button className="btn sm dng" disabled={disabled} onClick={() => void run(async () => {
-                await request('kick', { target: player.id });
-                if (current.current) { setTarget(''); setConfirmation(false); setStatus(player.name + ' wurde getrennt.'); }
+                await request(confirmation.cmd, confirmation.payload);
+                if (current.current) {
+                  setConfirmation(null);
+                  setStatus(`Aktion für ${confirmation.label} ausgeführt.`);
+                  if (confirmation.cmd === 'kick' || confirmation.cmd === 'ban') setTarget('');
+                }
                 await refresh();
-              })}>Trennung bestätigen</button>
-              <button className="btn sm" disabled={busy} onClick={() => setConfirmation(false)}>Abbrechen</button>
+              })}>Bestätigen</button>
+              <button className="btn sm" disabled={busy} onClick={() => setConfirmation(null)}>Abbrechen</button>
             </div>
-          </> : <button className="btn sm" disabled={disabled || !player} onClick={() => setConfirmation(true)}>Verbindung trennen</button>}
+          </> : <div className="row wrap">
+            <button className="btn sm" disabled={disabled || !player} onClick={() => player && setConfirmation({ cmd: 'kick', label: player.name, payload: { target: player.id } })}>{ACTION_LABEL.kick}</button>
+            <button className="btn sm" disabled={disabled || !moderationTarget} onClick={() => moderationTarget && setConfirmation({ cmd: 'mute', label: moderationLabel, payload: moderationTarget })}>{ACTION_LABEL.mute}</button>
+            <button className="btn sm" disabled={disabled || !moderationTarget} onClick={() => moderationTarget && setConfirmation({ cmd: 'ban', label: moderationLabel, payload: moderationTarget })}>{ACTION_LABEL.ban}</button>
+          </div>}
+          {!!dashboard.restrictions?.length && <>
+            <strong>Aktive Sperren</strong>
+            {dashboard.restrictions.map(restriction => <div className="row wrap" key={restriction.account}>
+              <span>{restriction.account}</span>
+              {restriction.muted && <button className="btn sm" disabled={disabled || !!confirmation}
+                onClick={() => setConfirmation({ cmd: 'unmute', label: restriction.account, payload: { account: restriction.account } })}>{ACTION_LABEL.unmute}</button>}
+              {restriction.banned && <button className="btn sm" disabled={disabled || !!confirmation}
+                onClick={() => setConfirmation({ cmd: 'unban', label: restriction.account, payload: { account: restriction.account } })}>{ACTION_LABEL.unban}</button>}
+            </div>)}
+          </>}
         </section>
         <section className="card col" aria-label="Aktionsprotokoll">
           <strong>Aktionsprotokoll</strong>

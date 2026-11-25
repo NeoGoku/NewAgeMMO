@@ -108,11 +108,96 @@ try {
   assert.equal(retained.length, 200);
   assert.equal(retained[199].id, 'old197', 'only the oldest persisted audit entry was evicted');
 
+  const playing = new Client();
+  const selecting = new Client();
+  core.onConnection(playing);
+  core.onConnection(selecting);
+  const { token } = await playing.request('login', { user: 'Visitor', pass: 'test-only' });
+  assert.equal((await selecting.request('resume', { token })).t, 'ok');
+  assert.equal((await playing.request('enter', { id })).t, 'ok');
+  assert.equal((await playing.request('admin', { cmd: 'mute', target: id })).t, 'err');
+  assert.equal((await keeper.request('admin', { cmd: 'mute', name: 'Missing' })).t, 'err');
+  assert.equal((await keeper.request('admin', { cmd: 'mute', target: id })).t, 'ok');
+  for (const ch of ['local', 'global', 'party', 'guild', 'whisper']) {
+    assert.equal((await playing.request('chat', { ch, text: 'Leise' })).err, 'Der Chat wurde für deinen Account gesperrt.');
+  }
+  assert.equal((await keeper.request('admin', { cmd: 'unmute', name: 'vISITOR' })).t, 'ok');
+  assert.equal((await playing.request('chat', { ch: 'global', text: 'Wieder da' })).t, 'ok');
+
+  if (store.kind === 'file') {
+    const flush = store.flush;
+    store.flush = async () => { throw new Error('test storage failure'); };
+    try {
+      assert.equal((await keeper.request('admin', { cmd: 'ban', target: id })).t, 'err');
+      assert.equal(playing.readyState, 1);
+      assert.equal(selecting.readyState, 1);
+    } finally { store.flush = flush; }
+  }
+  assert.equal((await keeper.request('admin', { cmd: 'ban', target: id })).t, 'ok');
+  assert.equal(playing.readyState, 3);
+  assert.equal(selecting.readyState, 3);
+  assert.ok(playing.events.some(event => event.t === 'kicked' && event.banned === true));
+  const returning = new Client();
+  core.onConnection(returning);
+  assert.equal((await returning.request('resume', { token })).t, 'err');
+  assert.equal((await returning.request('login', { user: 'Visitor', pass: 'test-only' })).err, 'Account gesperrt');
+  const restricted = await keeper.request('admin', { cmd: 'dashboard' }) as { restrictions: unknown[]; audit: { action: string }[] };
+  assert.deepEqual(restricted.restrictions, [{ account: 'Visitor', muted: false, banned: true }]);
+  assert.deepEqual(restricted.audit.slice(0, 3).map(entry => entry.action), ['ban', 'unmute', 'mute']);
+  assert.equal((await keeper.request('admin', { cmd: 'unban', account: 'visitor' })).t, 'ok');
+  assert.equal((await returning.request('resume', { token })).t, 'err', 'reversing a ban does not reauthorize a revoked token');
+  assert.equal((await returning.request('login', { user: 'Visitor', pass: 'test-only' })).t, 'ok');
+
+  assert.equal((await keeper.request('admin', { cmd: 'mute', name: 'Visitor' })).t, 'ok', 'an offline character resolves to its account');
+  const racing = new Client();
+  core.onConnection(racing);
+  const put = store.put.bind(store);
+  let beganWriting!: () => void;
+  let finishWriting!: () => void;
+  const writing = new Promise<void>(resolve => { beganWriting = resolve; });
+  const release = new Promise<void>(resolve => { finishWriting = resolve; });
+  store.put = async (collection, key, value) => {
+    if (collection === 'accounts' && key === 'visitor') { beganWriting(); await release; }
+    await put(collection, key, value);
+  };
+  const racingLogin = racing.request('login', { user: 'Visitor', pass: 'test-only' });
+  let racingToken: unknown;
+  try {
+    await Promise.race([writing, racingLogin]);
+    const racingBan = keeper.request('admin', { cmd: 'ban', account: 'Visitor' });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    finishWriting();
+    racingToken = (await racingLogin).token;
+    assert.equal(typeof racingToken, 'string');
+    assert.equal((await racingBan).t, 'ok');
+    assert.equal(racing.readyState, 3, 'a login completing concurrently is included when the ban closes sessions');
+  } finally { finishWriting(); store.put = put; }
+
   const expired = await store.get('accounts', 'keeper');
   await store.put('accounts', 'keeper', { ...expired, tokens: [] });
   assert.equal((await keeper.request('admin', { cmd: 'dashboard' })).t, 'err', 'the server rechecks the active admin token');
 
   await core.shutdown();
+  const restarted = await createCore(makeStore(), { adminUsers: () => process.env.ADMIN_USERS });
+  try {
+    const admin = new Client();
+    const player = new Client();
+    restarted.onConnection(admin);
+    restarted.onConnection(player);
+    assert.equal((await admin.request('login', { user: 'Keeper', pass: 'test-only' })).t, 'ok');
+    assert.equal((await player.request('login', { user: 'Visitor', pass: 'test-only' })).err, 'Account gesperrt');
+    const dashboard = await admin.request('admin', { cmd: 'dashboard' }) as { restrictions: unknown[]; audit: { action: string }[] };
+    assert.deepEqual(dashboard.restrictions, [{ account: 'Visitor', muted: true, banned: true }]);
+    assert.deepEqual(dashboard.audit.slice(0, 2).map(entry => entry.action), ['ban', 'mute']);
+    assert.equal((await admin.request('admin', { cmd: 'unban', name: 'Visitor' })).t, 'ok');
+    assert.equal((await player.request('resume', { token: racingToken })).t, 'err');
+    assert.equal((await player.request('login', { user: 'Visitor', pass: 'test-only' })).t, 'ok');
+    assert.equal((await player.request('enter', { id })).t, 'ok');
+    assert.equal((await player.request('chat', { ch: 'global', text: 'Noch gesperrt' })).t, 'err');
+    assert.equal((await admin.request('admin', { cmd: 'unmute', account: 'Visitor' })).t, 'ok');
+    assert.equal((await player.request('chat', { ch: 'global', text: 'Wieder frei' })).t, 'ok');
+  } finally { await restarted.shutdown(); }
+
   const soloStore = new MemoryStore();
   await soloStore.put('accounts', 'keeper', { ...stored, admin: true });
   const soloCore = await createCore(soloStore);

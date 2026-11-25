@@ -2,6 +2,7 @@ import { GEO, cellId, hash32, haversine, rad, rng, type GeoObj } from '@nam/shar
 import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NODES, NPCS, placeNear, type MobDef } from '@nam/game-data';
 import { G, now } from './state';
 import { osmObjects } from './geo-osm';
+import { propertyObjects } from './geo-property-data';
 
 export const anchorList = Object.entries(GEO_ANCHORS);
 const nearestAnchor = (lat: number, lon: number) => {
@@ -148,6 +149,7 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
     const position = house.geo;
     if (position) keep({ id: 'h:' + house.id, k: 'house', def: house.kind, ...position, name: `${house.kind === 'guild' ? 'Gildenhaus' : 'Haus'} ${house.ownerName}` });
   }
+  for (const property of propertyObjects(lat, lon, radius)) keep(property);
   for (const poi of osmObjects(lat, lon, radius)) keep(poi);
   return out.sort((a, b) => haversine(lat, lon, a.lat, a.lon) - haversine(lat, lon, b.lat, b.lon));
 }

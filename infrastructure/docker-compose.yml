@@ -10,6 +10,7 @@ services:
     environment:
       DATABASE_URL: "postgres://nam:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/nam"
       ADMIN_USERS: "${ADMIN_USERS:-}"
+      VALHALLA_URL: "${VALHALLA_URL:-}"
     ports: ["8080:8080"]
     restart: unless-stopped
 volumes: { pgdata: {} }

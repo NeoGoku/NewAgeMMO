@@ -1,5 +1,5 @@
 import type { SockLike } from './core';
-import type { Character, ItemInst, EvtView } from '@nam/shared';
+import type { Character, ItemInst, EvtView, GeoCoord, GeoRoutePreview } from '@nam/shared';
 import type { Derived } from '@nam/shared';
 import type { MobDef, LocDef } from '@nam/game-data';
 import type { Store } from './store';
@@ -15,7 +15,9 @@ export interface Player {
 }
 export interface GeoState {
   on: boolean; gps: boolean; visible: boolean; lat: number; lon: number; has: boolean; regionLabel: string;
-  dest: { lat: number; lon: number } | null; steer: { north: number; east: number; until: number } | null; motionAt: number;
+  steer: { north: number; east: number; until: number } | null; motionAt: number;
+  tripProgress: number; routePlanning?: boolean; routeLimit?: { tokens: number; at: number };
+  preview?: { from: GeoCoord; expires: number; route: GeoRoutePreview };
   fix?: { lat: number; lon: number; at: number; rounded?: boolean }; strikes: number[]; lockUntil: number;
   flags: string[]; lastPush: number; visited: Set<string>;
 }
@@ -26,7 +28,7 @@ export interface NodeS { uid: string; def: string; x: number; y: number; ready: 
 export interface LocState { id: string; def: LocDef; players: Set<Player>; mobs: Mob[]; nodes: NodeS[]; weather: string; weatherUntil: number; evts: EvtView[]; bossText: string[] }
 export interface Party { id: string; leader: string; members: string[]; expMode: 'even' | 'level' }
 export interface Guild { id: string; name: string; tag: string; leader: string; created: number; level: number; exp: number; gold: number; members: Record<string, { name: string; rank: number; joined: number; contrib: number }>; bank: ItemInst[]; skills: Record<string, number>; war: { vs: string; vsName: string; until: number; score: number; theirScore: number } | null; houseId: string | null; motd: string; quest: { id: string; prog: number; day: number } }
-export interface House { id: string; kind: 'player' | 'guild'; ownerId: string; ownerName: string; slot: number; style: string; floors: number; furniture: { id: string; furn: string; x: number; y: number; rot: number; floor: number }[]; visit: 'all' | 'friends' | 'private'; stash: ItemInst[]; garden: { plantedAt: number } | null; rent?: { tenant: string; tenantName: string; price: number; until: number } | null; created: number; geo?: { lat: number; lon: number } }
+export interface House { id: string; kind: 'player' | 'guild'; ownerId: string; ownerName: string; slot: number; style: string; floors: number; furniture: { id: string; furn: string; x: number; y: number; rot: number; floor: number }[]; visit: 'all' | 'friends' | 'private'; stash: ItemInst[]; garden: { plantedAt: number } | null; rent?: { tenant: string; tenantName: string; price: number; until: number } | null; created: number; geo?: { lat: number; lon: number }; propertyId?: string }
 export interface Listing { id: string; kind: 'ah' | 'stall' | 'order'; seller: string; sellerName: string; item?: ItemInst; price: number; expires: number; want?: { id: string; qty: number }; created: number }
 export const G = {
   store: null as unknown as Store, players: new Map<string, Player>(), byName: new Map<string, Player>(), locs: new Map<string, LocState>(), parties: new Map<string, Party>(), guilds: new Map<string, Guild>(),
@@ -53,9 +55,15 @@ function sendRaw(p: Player, message: string) {
 export function send(p: Player | undefined, m: any) {
   if (!p?.online) return;
   const messages = deferred.get(p);
-  const message = JSON.stringify(m);
+  const message = JSON.stringify(m.t === 'char' && m.c ? { ...m, c: characterForClient(m.c) } : m);
   if (messages) messages.push(message);
   else sendRaw(p, message);
+}
+export function characterForClient(c: Character): Character {
+  if (!c.geo?.trip) return c;
+  const geo = { ...c.geo };
+  delete geo.trip;
+  return { ...c, geo };
 }
 export const sys = (p: Player | undefined, text: string, kind = 'sys') => send(p, { t: 'chat', ch: kind, from: '', text, at: now() });
 export function toLoc(l: LocState, m: any) { const s = JSON.stringify(m); for (const p of l.players) if (p.online && p.ws.readyState === 1) p.ws.send(s); }

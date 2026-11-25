@@ -6,6 +6,9 @@
 - [implementiert/geprüft] P1: eigenständige Teleportportale mit Distanz-, Modus- und Freischaltungsprüfung sowie virtuelles Routing mit serverseitiger Reisezeit.
 - [implementiert] Smartphone-Paket mit acht dauerhaft gespeicherten Kartenstilen, GPS-Handshake, serverseitigem Touch-Joystick, regionalen Spawns, Questkarten-Tracking, Solo-Backup und überarbeitetem Audio.
 - [implementiert] P1: persistente OSM-Regionen in PostgreSQL/PostGIS und eine tägliche geografische Erkundungsquest.
+- [implementiert] Getrennte Kartentypen und Styles mit Vorschauen, gemeinsamer Bedienung und Migration bisheriger Einstellungen.
+- [implementiert] Straßenrouting mit Valhalla, Reisevorschau, Fahrzeugfreigaben und persistenter Reise. Der öffentliche Betrieb benötigt einen eingerichteten Routendienst.
+- [teilweise] Immobilienkatalog mit Braunschweig-Import, Kauf, Rückverkauf, Einrichtung und persönlicher Schnellreise. Datenbereitstellung, Vermietung, Baugrundstücke und weitere Immobilienarten stehen aus.
 - [offen] P1: Gebietskontrolle, weitere geografische Questtypen und Instanzen für Gruppen und Dungeons.
 
 1. [teilweise] Release-Signierung prüft den festen Zertifikatsfingerabdruck. Betreiber muss Key und Fingerabdruck in GitHub hinterlegen; erster Release und physisches Update bleiben zu prüfen.
@@ -14,7 +17,7 @@
 4. [offen] Lasttest-Skript (50–100 Bot-Clients), Tickzeit messen.
 5. [offen] Weitere Integrationstests: Gilde, Handel-Abschluss, Haus-Möbel, Crafting, Pets, Quest-Abgabe.
 6. [offen] Tutorial/Onboarding-Hinweise, Questtexte vertiefen, mehr Dialoge.
-7. [teilweise] Online-Adminoberfläche mit Audit, Ankündigungen und Kick. Mute/Ban und Backup-Automation stehen aus.
+7. [teilweise] Online-Adminoberfläche mit Audit, Ankündigungen, Kick sowie dauerhaftem Mute/Ban und Aufhebung. Backup-Automation steht aus.
 8. [offen] Android-UX: Gesten, Akku-Modus, Landscape-Feintuning; Zielgerät testen.
 9. [offen] Handgemachte Endassets (siehe ASSET_LICENSES.md).
 

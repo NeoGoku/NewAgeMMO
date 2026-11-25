@@ -1,19 +1,23 @@
 import { publishProgress } from './character-save';
-import { GEO, R_EARTH, haversine, moveToward, quant, rad, wrapLon, type GeoPosition } from '@nam/shared';
+import { GEO, R_EARTH, haversine, quant, rad, wrapLon, type GeoCoord, type GeoPosition, type GeoRoutePreview, type GeoTravelView } from '@nam/shared';
 import { GEO_ANCHORS, GEO_START, LOCS, MOBS, NODES, ITEMS } from '@nam/game-data';
-import { clamp, deferMessages, G, now, send, sys, type GeoState, type House, type Player } from './state';
-import { H } from './handlers';
+import { clamp, deferMessages, G, now, send, sys, uid, type GeoState, type House, type Player } from './state';
+import { H, NO_CHAR } from './handlers';
 import { setLocSilent, enterScene, exitScene, teleportTo } from './world';
 import { questEvent, recordRegionalVisit } from './quests';
 import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 import { anchorList, geoObjects } from './geo-world';
 import { loadOsmPoints } from './geo-osm';
+import { geoDistance, isTravelMode, planRoute, routeLength, travelModes, tripDistance, tripPosition, validCoord, validTrip } from './geo-routing';
 
 const S = (v: unknown) => typeof v === 'string' ? v.slice(0, 80) : '';
 const NUM = (v: unknown, a: number, b: number) => typeof v === 'number' && Number.isFinite(v) && v >= a && v <= b ? v : null;
 const GPS_LOCK_MS = 10 * 60e3;
 const GEO_PUSH_MS = 2000;
+const ROUTE_REQUEST_BURST = 4;
+const ROUTE_REQUEST_REFILL_MS = 800;
+const PREVIEW_TTL_MS = 60e3;
 const virtualSpeed = (p: Player) => GEO.virtualSpeed * (p.c.equipment.mount ? 1.8 : 1);
 const positionBlocked = (p: Player) => p.dead || p.travel || p.inScene || p.duel || p.houseId;
 
@@ -30,11 +34,15 @@ export function zoneAt(lat: number, lon: number, current: string): string {
 function gs(p: Player): GeoState {
   if (p.geo) return p.geo;
   const saved = p.c.geo;
+  if (saved?.trip && !validTrip(saved.trip)) {
+    delete saved.trip;
+    p.dirty = true;
+  }
   const hasSavedPosition = saved && (saved.positionSet || saved.qlat !== 0 || saved.qlon !== 0);
   return p.geo = {
     on: false, gps: false, visible: saved?.visible ?? true,
     lat: hasSavedPosition ? saved.qlat : GEO_START[0], lon: hasSavedPosition ? saved.qlon : GEO_START[1],
-    has: false, regionLabel: 'Regionale Wildnis', dest: null, steer: null, motionAt: 0,
+    has: false, regionLabel: 'Regionale Wildnis', steer: null, motionAt: 0, tripProgress: 0,
     fix: saved?.gpsFix ? { ...saved.gpsFix, rounded: true } : undefined,
     strikes: saved?.gpsStrikes || [], lockUntil: saved?.gpsLockUntil || 0,
     flags: [], lastPush: 0, visited: new Set(),
@@ -46,7 +54,7 @@ H.geoConsent = (p, m) => {
   const enabled = m.on === true;
   const gps = enabled && m.gps === true;
   if (g.gps !== gps || !enabled) {
-    g.dest = g.steer = null;
+    g.steer = null;
     g.motionAt = 0;
     g.has = false;
   }
@@ -55,14 +63,18 @@ H.geoConsent = (p, m) => {
   g.visible = m.visible !== false;
   p.c.geo = { qlat: 0, qlon: 0, gpsM: 0, dayM: 0, day: 0, ...p.c.geo, consent: g.on, visible: g.visible };
   p.dirty = true;
+  if ((!g.on || g.gps) && clearTrip(p, g, false)) publishProgress(p);
   if (!g.on) {
+    sendRoute(p);
     send(p, { t: 'geo', off: true });
     return;
   }
   if (!g.gps) {
     g.has = true;
+    updateTrip(p, g, now());
     afterMove(p);
   }
+  sendRoute(p);
   pushGeo(p);
 };
 
@@ -76,6 +88,7 @@ H.geoWipe = (p) => {
   }
   p.dirty = true;
   publishProgress(p, undefined, () => {
+    sendRoute(p);
     send(p, { t: 'geo', off: true });
     sys(p, 'Alle gespeicherten Standortdaten wurden gelöscht.');
   });
@@ -152,22 +165,106 @@ H.geoPos = (p, m, receivedAt = now()) => {
   else sendMotion(p, g);
 };
 
-H.geoWalk = (p, m) => {
-  const g = gs(p);
-  if (!g.on) return 'Virtueller Modus nicht aktiv';
+function routeAllowed(p: Player, g: GeoState) {
+  if (!g.on || !g.has || g.gps) return 'Wechsle zuerst in den virtuellen Modus';
   if (g.lockUntil > now()) return 'Standort gesperrt';
-  if (g.gps) return 'Wechsle zuerst in den virtuellen Modus';
-  if (positionBlocked(p)) return 'Bewegung gerade nicht möglich';
-  const lat = NUM(m.lat, -85, 85), lon = NUM(m.lon, -180, 180);
-  if (lat === null || lon === null) return 'Ungültige Koordinaten';
-  const distance = haversine(g.lat, g.lon, lat, lon);
-  if (distance > 200000) return 'Ziel zu weit für virtuelles Laufen (max. 200 km)';
-  g.steer = null;
-  g.motionAt = now();
-  g.dest = distance > 0 ? { lat, lon } : null;
-  pushGeo(p);
-  return { etaSeconds: Math.ceil(distance / virtualSpeed(p)) };
+  if (positionBlocked(p) || p.combatUntil > now()) return 'Reisen ist gerade nicht möglich';
+}
+
+async function routePreview(p: Player, g: GeoState, m: any, starting = false): Promise<GeoRoutePreview | string> {
+  const target = { lat: m.lat, lon: m.lon };
+  const mode = m.mode;
+  if (!validCoord(target)) return 'Ungültige Zielkoordinaten';
+  if (!isTravelMode(mode) || !travelModes(p.c).includes(mode)) return 'Dieser Reisemodus ist für dich nicht verfügbar';
+  const from = { lat: g.lat, lon: g.lon };
+  const time = now();
+  const cached = g.preview;
+  const matchingPreview = cached && cached.expires > time && cached.route.mode === mode &&
+    cached.route.target.lat === target.lat && cached.route.target.lon === target.lon &&
+    (m.previewId === undefined || m.previewId === cached.route.id) ? cached : undefined;
+  if (matchingPreview && geoDistance(matchingPreview.from, from) < 1) return matchingPreview.route;
+  if (starting && matchingPreview) g.preview = undefined;
+  else {
+    const limit = g.routeLimit ??= { tokens: ROUTE_REQUEST_BURST, at: time };
+    limit.tokens = Math.min(ROUTE_REQUEST_BURST, limit.tokens + Math.max(0, time - limit.at) / ROUTE_REQUEST_REFILL_MS);
+    limit.at = time;
+    if (limit.tokens < 1) return 'Bitte warte kurz vor der nächsten Routenanfrage';
+    limit.tokens--;
+  }
+  const planned = await planRoute(from, target, mode);
+  if (typeof planned === 'string') return planned;
+  const { points, speedMps } = planned;
+  const totalM = routeLength(points);
+  const route = { id: uid('rt'), points, mode, target, totalM, speedMps, etaSeconds: Math.ceil(totalM / speedMps) };
+  g.preview = { from, expires: now() + PREVIEW_TTL_MS, route };
+  return route;
+}
+
+H.geoRoutePreview = async (p, m) => {
+  const g = gs(p);
+  const error = routeAllowed(p, g);
+  if (error) return error;
+  const preview = await routePreview(p, g, m);
+  return typeof preview === 'string' ? preview : { preview };
 };
+
+H.geoRouteStart = async (p, m) => {
+  const g = gs(p);
+  const error = routeAllowed(p, g);
+  if (error) return error;
+  updateTrip(p, g, now());
+  g.routePlanning = true;
+  try {
+    const route = await routePreview(p, g, m, true);
+    if (typeof route === 'string') return route;
+    const blocked = routeAllowed(p, g);
+    if (blocked || !p.online || p.ws.readyState !== 1) return blocked;
+    const { id, points, mode, target, speedMps } = route;
+    p.c.geo!.trip = { id, points, mode, target, speedMps, progressM: 0, startedAt: now() };
+    g.preview = undefined;
+    g.steer = null;
+    g.tripProgress = 0;
+    updateTrip(p, g, now());
+    persistRoute(p);
+    return { etaSeconds: route.etaSeconds };
+  } finally {
+    g.routePlanning = false;
+  }
+};
+
+H.geoRoutePause = (p) => {
+  const g = gs(p);
+  if (!p.c.geo?.trip || !g.on || g.gps) return 'Keine virtuelle Reise aktiv';
+  updateTrip(p, g, now());
+  pauseTrip(p, g);
+  persistRoute(p);
+};
+
+H.geoRouteResume = (p) => {
+  const g = gs(p);
+  const error = routeAllowed(p, g);
+  if (error) return error;
+  const trip = p.c.geo?.trip;
+  if (!trip || trip.progressM >= routeLength(trip.points)) return 'Keine virtuelle Reise aktiv';
+  if (!travelModes(p.c).includes(trip.mode)) return 'Dieser Reisemodus ist für dich nicht verfügbar';
+  if (trip.startedAt === null) {
+    trip.startedAt = now();
+    persistRoute(p);
+  }
+};
+
+H.geoRouteCancel = (p) => {
+  const g = gs(p);
+  if (!g.on || g.gps) return 'Keine virtuelle Reise aktiv';
+  updateTrip(p, g, now());
+  g.steer = null;
+  clearTrip(p, g, false);
+  persistRoute(p);
+};
+
+H.geoWalk = (p, m) => H.geoRouteStart(p, { ...m, mode: 'run' });
+H.geoStop = H.geoRouteCancel;
+for (const command of ['geoRoutePreview', 'geoRouteStart', 'geoRoutePause', 'geoRouteResume', 'geoRouteCancel']) NO_CHAR.add(command);
 
 H.geoSteer = (p, m, receivedAt = now()) => {
   const g = gs(p);
@@ -187,15 +284,9 @@ H.geoSteer = (p, m, receivedAt = now()) => {
   }
   if (positionBlocked(p)) return 'Bewegung gerade nicht möglich';
   if (!g.steer || g.steer.until <= t) g.motionAt = t;
-  g.dest = null;
+  if (clearTrip(p, g)) publishProgress(p);
   const normalization = Math.max(1, magnitude);
   g.steer = { north: north / normalization, east: east / normalization, until: receivedAt + GEO.steerTimeoutMs };
-};
-
-H.geoStop = (p) => {
-  const g = gs(p);
-  g.dest = g.steer = null;
-  if (g.on) pushGeo(p);
 };
 
 function afterMove(p: Player) {
@@ -229,27 +320,76 @@ function afterMove(p: Player) {
   recordRegionalVisit(p);
 }
 
+function sendRoute(p: Player) {
+  const trip = p.geo?.on && !p.geo.gps ? p.c.geo?.trip : undefined;
+  send(p, { t: 'geoRoute', route: trip ? { id: trip.id, points: trip.points } : null });
+}
+
+function pushRouteState(p: Player) {
+  sendRoute(p);
+  pushGeo(p);
+}
+
+function persistRoute(p: Player) {
+  publishProgress(p, undefined, () => pushRouteState(p));
+}
+
+function clearTrip(p: Player, g: GeoState, notify = true) {
+  g.preview = undefined;
+  if (!p.c.geo?.trip) return false;
+  delete p.c.geo.trip;
+  g.tripProgress = 0;
+  p.dirty = true;
+  if (notify) sendRoute(p);
+  return true;
+}
+
+function pauseTrip(p: Player, g: GeoState) {
+  const trip = p.c.geo?.trip;
+  if (!trip || trip.startedAt === null) return;
+  trip.progressM = Math.max(trip.progressM, g.tripProgress);
+  trip.startedAt = null;
+  p.dirty = true;
+}
+
+function updateTrip(p: Player, g: GeoState, t: number) {
+  const trip = p.c.geo?.trip;
+  if (!trip) return false;
+  const wasMoving = trip.startedAt !== null;
+  if (wasMoving && (positionBlocked(p) || p.combatUntil > t || g.lockUntil > t || !travelModes(p.c).includes(trip.mode))) pauseTrip(p, g);
+  const progress = Math.max(g.tripProgress, tripDistance(trip, t));
+  const point = tripPosition(trip, progress);
+  const moved = g.lat !== point.lat || g.lon !== point.lon;
+  g.tripProgress = progress;
+  if (trip.startedAt !== null && progress >= routeLength(trip.points)) pauseTrip(p, g);
+  if (moved) {
+    g.lat = point.lat;
+    g.lon = point.lon;
+    afterMove(p);
+  }
+  return moved || wasMoving !== (trip.startedAt !== null);
+}
+
 function advanceVirtual(p: Player, g: GeoState, t: number) {
-  const { steer, dest } = g;
-  if (!steer && !dest) return;
-  const dt = Math.max(0, Math.min(250, (steer ? Math.min(t, steer.until) : t) - g.motionAt)) / 1000;
+  if (g.routePlanning) return;
+  if (p.c.geo?.trip) {
+    if (updateTrip(p, g, t)) sendMotion(p, g);
+    return;
+  }
+  const { steer } = g;
+  if (!steer) return;
+  const dt = Math.max(0, Math.min(250, Math.min(t, steer.until) - g.motionAt)) / 1000;
   g.motionAt = t;
   if (positionBlocked(p) || g.lockUntil > t) {
-    if (steer) { g.steer = null; sendMotion(p, g); }
+    g.steer = null;
+    sendMotion(p, g);
     return;
   }
   const distance = virtualSpeed(p) * dt;
-  if (steer) {
-    const radiansToDegrees = 180 / Math.PI;
-    g.lat = clamp(g.lat + steer.north * distance / R_EARTH * radiansToDegrees, -85, 85);
-    g.lon = wrapLon(g.lon + steer.east * distance / (R_EARTH * Math.cos(rad(g.lat))) * radiansToDegrees);
-    if (t >= steer.until) g.steer = null;
-  } else if (dest) {
-    const step = moveToward(g.lat, g.lon, dest.lat, dest.lon, distance);
-    g.lat = step.lat;
-    g.lon = step.lon;
-    if (step.arrived) g.dest = null;
-  }
+  const radiansToDegrees = 180 / Math.PI;
+  g.lat = clamp(g.lat + steer.north * distance / R_EARTH * radiansToDegrees, -85, 85);
+  g.lon = wrapLon(g.lon + steer.east * distance / (R_EARTH * Math.cos(rad(g.lat))) * radiansToDegrees);
+  if (t >= steer.until) g.steer = null;
   if (dt > 0) afterMove(p);
   sendMotion(p, g);
 }
@@ -270,16 +410,46 @@ export function geoTick() {
 }
 
 function geoPosition(p: Player, g: GeoState): GeoPosition {
-  const speed = g.dest ? virtualSpeed(p) : g.steer ? virtualSpeed(p) * Math.hypot(g.steer.north, g.steer.east) : 0;
+  const trip = !g.gps ? p.c.geo?.trip : undefined;
+  let travel: GeoTravelView | null = null;
+  if (trip) {
+    const totalM = routeLength(trip.points);
+    const remainingM = Math.max(0, totalM - g.tripProgress);
+    travel = {
+      id: trip.id, mode: trip.mode, target: trip.target, totalM, remainingM,
+      etaSeconds: Math.ceil(remainingM / trip.speedMps),
+      status: remainingM === 0 ? 'arrived' : trip.startedAt === null ? 'paused' : 'moving',
+    };
+  }
+  const speed = trip && travel?.status === 'moving' ? trip.speedMps
+    : g.steer ? virtualSpeed(p) * Math.hypot(g.steer.north, g.steer.east) : 0;
   return {
-    lat: g.lat, lon: g.lon, mode: g.gps ? 'gps' : 'virtual', dest: g.dest, speed, regionLabel: g.regionLabel,
-    etaSeconds: g.dest ? Math.ceil(haversine(g.lat, g.lon, g.dest.lat, g.dest.lon) / speed) : 0,
+    lat: g.lat, lon: g.lon, mode: g.gps ? 'gps' : 'virtual', dest: travel?.status === 'moving' ? travel.target : null, speed, regionLabel: g.regionLabel,
+    etaSeconds: travel?.etaSeconds ?? 0, travel, travelModes: travelModes(p.c),
     flags: g.flags.slice(-3).concat(g.lockUntil > now() ? ['locked'] : []),
     gpsM: Math.round(p.c.geo?.gpsM || 0), dayM: Math.round(p.c.geo?.dayM || 0),
   };
 }
 
 function sendMotion(p: Player, g: GeoState) { send(p, { t: 'geoMotion', position: geoPosition(p, g) }); }
+
+export function moveToOwnedProperty(p: Player, position: GeoCoord): string | undefined {
+  const g = gs(p);
+  const error = routeAllowed(p, g);
+  if (error) return error;
+  clearTrip(p, g, false);
+  g.steer = null;
+  g.motionAt = now();
+  g.lat = position.lat;
+  g.lon = position.lon;
+  p.target = null;
+  p.auto = false;
+  p.autoFarm = null;
+  p.pending = null;
+  p.gather = null;
+  const notify = deferMessages(p, () => afterMove(p));
+  publishProgress(p, undefined, () => { notify(); pushRouteState(p); });
+}
 
 export function pushGeo(p: Player) {
   const g = gs(p);
@@ -322,13 +492,13 @@ H.geoInteract = (p, m) => {
       const notify = deferMessages(p, () => {
         error = teleportTo(p, destination.id, destination.cost!);
         if (error) return;
-        g.dest = null;
+        clearTrip(p, g, false);
         g.steer = null;
         g.motionAt = now();
         afterMove(p);
       });
       if (error) return error;
-      publishProgress(p, undefined, () => { notify(); pushGeo(p); });
+      publishProgress(p, undefined, () => { notify(); pushRouteState(p); });
       return { teleported: destination.name };
     }
     case 'station': { setLocSilent(p, o.extra.loc); return { station: o.def }; }
@@ -339,7 +509,8 @@ H.geoInteract = (p, m) => {
       const scene = findLocWith(o.def);
       if (p.c.level + 15 < mobDef.lvl && mobDef.role !== 'normal') return 'Dieser Gegner ist weit über deiner Stufe';
       taken();
-      g.dest = g.steer = null;
+      g.steer = null;
+      pauseTrip(p, g);
       enterScene(p, scene);
       const mob = spawnMob(locOf(p), o.def, true, { x: 70, y: 70 });
       mob.maxHp = mob.hp = mobDef.hp;
@@ -356,9 +527,9 @@ H.geoInteract = (p, m) => {
       return { scene };
     }
     case 'node': { const nd = NODES[o.def]; const pr = p.c.prof[nd.prof] ||= { lvl: 1, exp: 0 }; if (pr.lvl < nd.tier * 10) return `Benötigt Berufslevel ${nd.tier * 10}`; const toolType = { mining: 'pickaxe', herbalism: 'sickle', woodcutting: 'axe' }[nd.prof]; if (!p.c.inventory.some(i => ITEMS[i.id].tool === toolType && ITEMS[i.id].tier >= nd.tier)) return 'Passendes Werkzeug fehlt'; taken(); const q = 1 + Math.floor(Math.random() * 3); invAdd(p.c, nd.yield, q); profGain(p, nd.prof, 8 + nd.tier * 12); questEvent(p, 'gather', nd.yield, q); sys(p, `Gesammelt: ${ITEMS[nd.yield].name} ×${q}`, 'loot'); return { gathered: nd.yield }; }
-    case 'dungeon': { const l = LOCS[o.def]; if (p.c.level < l.lvl[0] - 5) return `Empfohlen ab Level ${l.lvl[0]}`; enterScene(p, o.def); return { scene: o.def }; }
+    case 'dungeon': { const l = LOCS[o.def]; if (p.c.level < l.lvl[0] - 5) return `Empfohlen ab Level ${l.lvl[0]}`; pauseTrip(p, g); enterScene(p, o.def); return { scene: o.def }; }
     case 'poi': { if (o.def === 'osm') return { poi: true, osm: true }; taken(30 * 60e3); p.c.hp = p.st.maxHp; p.c.res = p.st.maxRes; const g2 = 20 + p.c.level * 5; p.c.gold += g2; sys(p, `Magische Quelle: voll erholt, +${g2} Gold`, 'loot'); return { poi: true }; }
-    case 'house': return { house: o.id.slice(2) };
+    case 'house': return o.def === 'property' ? { property: o.id } : { house: o.id.slice(2) };
   }
   return 'Nicht interagierbar';
 };

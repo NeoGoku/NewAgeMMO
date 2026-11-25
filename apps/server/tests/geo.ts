@@ -1,7 +1,35 @@
 import { spawn } from 'node:child_process'; import WebSocket from 'ws'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import { haversine, GEO } from '@nam/shared';
+import { createServer } from 'node:http';
 const PORT = 8700 + Math.floor(Math.random() * 200); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nam-'));
-const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '' }, stdio: 'ignore' });
+const requestsToRouter: any[] = [];
+const router = createServer(async (req, res) => {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  const query = JSON.parse(body);
+  requestsToRouter.push(query);
+  const [start, end] = query.locations;
+  const bend = { lat: start.lat + .0003, lon: end.lon };
+  let lat = 0, lon = 0, shape = '';
+  function encodeDelta(delta: number) {
+    let value = delta < 0 ? -delta * 2 - 1 : delta * 2;
+    while (value >= 32) { shape += String.fromCharCode(63 + (value % 32) + 32); value = Math.floor(value / 32); }
+    shape += String.fromCharCode(63 + value);
+  }
+  for (const point of [start, bend, end]) {
+    const nextLat = Math.round(point.lat * 1e6), nextLon = Math.round(point.lon * 1e6);
+    encodeDelta(nextLat - lat);
+    encodeDelta(nextLon - lon);
+    lat = nextLat;
+    lon = nextLon;
+  }
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ trip: { status: 0, legs: [{ shape }], summary: { time: 70 } } }));
+});
+await new Promise<void>(resolve => router.listen(0, '127.0.0.1', resolve));
+const routerAddress = router.address();
+if (!routerAddress || typeof routerAddress === 'string') throw new Error('Keine Test-Routingadresse');
+const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '', VALHALLA_URL: `http://127.0.0.1:${routerAddress.port}` }, stdio: 'ignore' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0; const ok = (c: any, m: string) => { if (!c) fail++; console.log(c ? '✓ ' + m : (process.env.GITHUB_ACTIONS ? '::error::' : '✗ ') + m); };
 (async () => {
   const { OsmPoints } = await import('../src/geo-osm');
@@ -40,8 +68,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(shared.length > 20 && shared.every(o => o.lat === byId.get(o.id)?.lat && o.lon === byId.get(o.id)?.lon && o.def === byId.get(o.id)?.def), 'Überlappende Kartenausschnitte enthalten dieselben regionalen Objekte');
   ok(geoObjects(40.821, 14.426).some(o => o.id === 'x:boss:azgoroth' && o.role === 'boss'), 'Boss ist in seiner kanonischen Region auf der Karte sichtbar');
   let ws!: WebSocket; for (let i = 0; i < 50; i++) { try { await new Promise<void>((res, rej) => { ws = new WebSocket(`ws://localhost:${PORT}`); ws.on('open', () => res()); ws.on('error', rej); }); break; } catch { await sleep(300); } }
-  let rid = 0; const pend = new Map<number, any>(); let geo: any = null; let motion: any = null;
-  const listen = (socket: WebSocket) => socket.on('message', d => { const m = JSON.parse(String(d)); if (m.rid && pend.has(m.rid)) pend.get(m.rid)(m); if (m.t === 'geo' && !m.off) geo = m; if (m.t === 'geoMotion') motion = m.position; });
+  let rid = 0; const pend = new Map<number, any>(); let geo: any = null; let motion: any = null; let route: any = null;
+  const listen = (socket: WebSocket) => socket.on('message', d => { const m = JSON.parse(String(d)); if (m.rid && pend.has(m.rid)) pend.get(m.rid)(m); if (m.t === 'geo' && !m.off) geo = m; if (m.t === 'geoMotion') motion = m.position; if (m.t === 'geoRoute') route = m.route; });
   listen(ws);
   const req = (t: string, o: any = {}): Promise<any> => new Promise(r => { const id = ++rid; pend.set(id, r); ws.send(JSON.stringify({ t, rid: id, ...o })); setTimeout(() => r({ t: 'err', err: 'timeout' }), 4000); });
   await req('register', { user: 'geo1', pass: 'secret12' }); const c = await req('createChar', { name: 'Geoer', cls: 'archer', look: { gender: 'm', face: 1, body: 1, hair: 2, hairColor: '#aa3311', tattoo: 0, skin: '#e0b090' } }); await req('enter', { id: c.id }); await sleep(500);
@@ -59,10 +87,40 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   r = await req('geoInteract', { id: portal?.id });
   ok(r.t === 'ok' && Array.isArray(r.destinations), 'Teleportziele am Portal abrufen');
   await req('geoConsent', { on: true, gps: false });
-  r = await req('geoWalk', { lat: 52.5219, lon: 13.415 });
-  ok(r.t === 'ok' && r.etaSeconds > 0, 'Server bestätigt Route und Reisezeit');
-  r = await req('geoStop');
-  ok(r.t === 'ok', 'Virtuelle Route anhalten');
+  const destination = { lat: 52.5219, lon: 13.415, mode: 'walk' };
+  r = await req('geoRoutePreview', { ...destination, mode: 'car' });
+  ok(r.t === 'err' && requestsToRouter.length === 0, 'Gesperrte Reisemodi werden vor der Routenanfrage abgelehnt');
+  r = await req('geoRoutePreview', destination);
+  const preview = r.preview;
+  ok(r.t === 'ok' && preview?.points.length === 3 && preview?.etaSeconds > 0 && requestsToRouter[0]?.costing === 'pedestrian', 'Server zeigt den Straßenverlauf und seine Reisezeit vorab');
+  ok(!route && !geo.me.travel, 'Routenvorschau startet keine Bewegung');
+  r = await req('geoRouteStart', { ...destination, previewId: preview?.id });
+  ok(r.t === 'ok' && route?.id && requestsToRouter.length === 1, 'Reisestart nutzt die passende Vorschau');
+  const savedTrip = JSON.parse(fs.readFileSync(path.join(dir, 'chars.json'), 'utf8'))[c.id].geo?.trip;
+  ok(savedTrip?.id === route?.id && savedTrip?.points.length === 3 && savedTrip?.startedAt > 0, 'Reisestart speichert Geometrie und Serverzeit dauerhaft');
+  await sleep(700);
+  const beforeLogout = motion?.travel?.remainingM;
+  ok(beforeLogout > 0 && beforeLogout < preview?.totalM, 'Virtuelle Reise folgt dem Routentakt');
+  await req('logout');
+  await sleep(900);
+  await req('enter', { id: c.id });
+  await req('geoConsent', { on: true, gps: false });
+  ok(geo.me.travel?.remainingM < beforeLogout && route?.points.length === 3, 'Laufende Reise holt Zeit nach der Wiederanmeldung auf');
+  r = await req('geoRoutePause');
+  const paused = geo.me.travel;
+  ok(r.t === 'ok' && paused?.status === 'paused', 'Virtuelle Route pausieren');
+  await req('logout');
+  await sleep(800);
+  await req('enter', { id: c.id });
+  await req('geoConsent', { on: true, gps: false });
+  ok(geo.me.travel?.remainingM === paused?.remainingM && geo.me.travel?.status === 'paused', 'Pausierte Reise bleibt über die Wiederanmeldung stehen');
+  r = await req('geoRouteResume');
+  ok(r.t === 'ok' && geo.me.travel?.status === 'moving', 'Virtuelle Route fortsetzen');
+  const previousRoute = route?.id;
+  r = await req('geoRouteStart', { lat: 52.522, lon: 13.4152, mode: 'run' });
+  ok(r.t === 'ok' && route?.id !== previousRoute && geo.me.travel?.mode === 'run', 'Reise vom aktuellen Punkt neu planen');
+  r = await req('geoRouteCancel');
+  ok(r.t === 'ok' && !route && !geo.me.travel, 'Virtuelle Route abbrechen');
   r = await req('travel', { to: 'aurelia_market' });
   ok(r.t === 'ok', 'Reise zum Marktviertel zur Entdeckung gestartet');
   await sleep(3600);
@@ -112,5 +170,13 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(r.t === 'err' && geo.pending, 'GPS-Wechsel nach Wiederanmeldung umgeht den Teleportschutz nicht');
   r = await req('geoPos', braunschweig);
   ok(r.t === 'ok' && geo.me?.lon === braunschweig.lon, 'GPS akzeptiert aktuellen Fix nach Wiederanmeldung');
+  const { configureRouting, planRoute, routeLength } = await import('../src/geo-routing');
+  configureRouting(`http://127.0.0.1:${routerAddress.port}`);
+  const car = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + .003 }, 'car');
+  ok(typeof car !== 'string' && Math.abs(routeLength(car.points) / car.speedMps - 70) < 1e-9 &&
+    requestsToRouter.at(-1)?.costing === 'auto', 'Fahrzeit und Fortschritt verwenden die Fahrzeit des Routendienstes');
+  configureRouting();
+  const missing = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + .003 }, 'walk');
+  ok(typeof missing === 'string' && missing.includes('eingerichtet'), 'Fehlende Routingkonfiguration liefert einen Fehler');
   ws.close(); srv.kill(); console.log(fail ? 'FAIL' : 'Alle Geo-Tests bestanden'); process.exit(fail ? 1 : 0);
 })();

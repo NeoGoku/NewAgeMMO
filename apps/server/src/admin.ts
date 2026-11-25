@@ -1,5 +1,5 @@
 import { ITEMS } from '@nam/game-data';
-import { NAME_RE, type AdminAuditEntry } from '@nam/shared';
+import { ACC_RE, NAME_RE, type AdminAuditEntry } from '@nam/shared';
 import { saveCharacter } from './character-save';
 import { invAdd } from './chars';
 import { respawnAll } from './game';
@@ -14,24 +14,45 @@ const RECENT_LIMIT = 20;
 const ROSTER_LIMIT = 100;
 const NO_ACCESS = 'Keine Berechtigung';
 type AdminRequest = Record<string, unknown>;
+interface Restriction { account: string; muted: boolean; banned?: boolean; revokedTokens?: string[] }
+interface AdminState { audit: AdminAuditEntry[]; restrictions: Record<string, Restriction> }
+type AuditDocument = AdminAuditEntry[] | AdminState;
 
-export function createAdmin(store: Store, configuredUsers: () => string | undefined) {
+export async function createAdmin(
+  store: Store,
+  configuredUsers: () => string | undefined,
+  accounts: WriteOrder,
+  disconnect: (accountId: string) => void,
+) {
   const order = new WriteOrder();
   const allows = (username: string) => !!username && (configuredUsers() ?? '').split(',')
     .some(user => user.trim().toLowerCase() === username.toLowerCase());
 
-  const readAudit = async () => (await store.get<AdminAuditEntry[]>(AUDIT_COLLECTION, AUDIT_KEY)) ?? [];
+  const readDocument = () => store.get<AuditDocument>(AUDIT_COLLECTION, AUDIT_KEY);
+  const entries = (doc: AuditDocument | null) => Array.isArray(doc) ? doc : doc?.audit ?? [];
+  const initial = await readDocument();
+  let restrictions = Array.isArray(initial) ? {} : initial?.restrictions ?? {};
+  const isMuted = (account: Account) => restrictions[account.id]?.muted ?? false;
+  const isBanned = (account: Account) => restrictions[account.id]?.banned ?? account.banned ?? false;
+  const mayResume = (account: Account, hash: string) => !isBanned(account) && !restrictions[account.id]?.revokedTokens?.includes(hash);
 
-  async function record(entry: AdminAuditEntry) {
-    const previous = await readAudit();
+  async function record(entry: AdminAuditEntry, next = restrictions) {
+    const previous = await readDocument();
+    const audit = [entry, ...entries(previous)].slice(0, AUDIT_LIMIT);
+    // A moderation change and its audit entry share a single durable write.
+    const document = Object.keys(next).length ? { audit, restrictions: next } : audit;
     try {
-      await store.put(AUDIT_COLLECTION, AUDIT_KEY, [entry, ...previous].slice(0, AUDIT_LIMIT));
+      await store.put(AUDIT_COLLECTION, AUDIT_KEY, document);
       await store.flush();
     } catch (error) {
       // File storage changes its in-memory document before flushing.
-      if (store.kind === 'file') await store.put(AUDIT_COLLECTION, AUDIT_KEY, previous);
+      if (store.kind === 'file') {
+        if (previous) await store.put(AUDIT_COLLECTION, AUDIT_KEY, previous);
+        else await store.del(AUDIT_COLLECTION, AUDIT_KEY);
+      }
       throw error;
     }
+    restrictions = next;
   }
 
   async function handle(actor: Account, request: AdminRequest, validSession: () => Promise<boolean>) {
@@ -45,18 +66,20 @@ export function createAdmin(store: Store, configuredUsers: () => string | undefi
         return {
           ...stats, saves: G.stats.saves, uptime: Math.floor((now() - G.startedAt) / 1000), store: store.kind,
           players: players.slice(0, ROSTER_LIMIT).map(p => ({ id: p.id, name: p.c.name, level: p.c.level })),
-          audit: (await readAudit()).slice(0, RECENT_LIMIT),
+          restrictions: Object.values(restrictions).filter(r => r.muted || r.banned)
+            .map(({ account, muted, banned }) => ({ account, muted, banned: !!banned })),
+          audit: entries(await readDocument()).slice(0, RECENT_LIMIT),
         };
       }
       if (request.cmd === 'backup') return { dir: 'siehe Server-Log' };
 
       // Persist the authorized request before applying any change.
-      const log = (action: AdminAuditEntry['action'], detail?: string, target?: string) =>
+      const log = (action: AdminAuditEntry['action'], detail?: string, target?: string, next?: AdminState['restrictions']) =>
         record({
           id: uid('audit'), at: now(), actor: actor.name, action,
           ...(detail !== undefined && { detail }),
           ...(target !== undefined && { target })
-        });
+        }, next);
       if (request.cmd === 'announce') {
         const text = typeof request.text === 'string' ? request.text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200) : '';
         if (!text) return 'Bitte eine Ankündigung eingeben.';
@@ -70,6 +93,38 @@ export function createAdmin(store: Store, configuredUsers: () => string | undefi
         if (!allows(actor.name)) return NO_ACCESS;
         respawnAll();
         return {};
+      }
+      const cmd = request.cmd;
+      if (cmd === 'mute' || cmd === 'unmute' || cmd === 'ban' || cmd === 'unban') {
+        const name = typeof request.name === 'string' ? request.name.trim() : '';
+        const accountName = typeof request.account === 'string' ? request.account.trim() : '';
+        const character = typeof request.target === 'string' ? G.chars.get(request.target) :
+          !accountName && NAME_RE.test(name) ? [...G.chars.values()].find(c => c.name.toLowerCase() === name.toLowerCase()) : undefined;
+        const accountKey = character
+          ? (G.players.get(character.id)?.acc ?? (await store.all<Account>('accounts')).find(a => a.id === character.accountId))?.name.toLowerCase()
+          : request.target === undefined && ACC_RE.test(accountName) ? accountName.toLowerCase() : undefined;
+        if (!accountKey) return 'Account nicht gefunden';
+        return accounts.run(accountKey, async () => {
+          const account = await store.get<Account>('accounts', accountKey);
+          if (!account || (character && account.id !== character.accountId)) return 'Account nicht gefunden';
+          if (!allows(actor.name) || !await validSession() || !allows(actor.name)) return NO_ACCESS;
+          if (cmd === 'ban' && actor.id === account.id) return 'Der eigene Account kann nicht gesperrt werden.';
+          const current = restrictions[account.id];
+          const restriction: Restriction = { ...(current ?? { account: account.name, muted: false }) };
+          if (cmd === 'mute' || cmd === 'unmute') {
+            if (restriction.muted === (cmd === 'mute')) return 'Die Chat-Sperre ist bereits im gewünschten Zustand.';
+            restriction.muted = cmd === 'mute';
+          } else {
+            if (isBanned(account) === (cmd === 'ban')) return 'Die Account-Sperre ist bereits im gewünschten Zustand.';
+            restriction.banned = cmd === 'ban';
+            if (cmd === 'ban') restriction.revokedTokens = account.tokens.filter(t => t.exp > now()).map(t => t.h);
+          }
+          const next = { ...restrictions, [account.id]: restriction };
+          if (!restriction.muted && !restriction.banned && !account.banned && !restriction.revokedTokens?.length) delete next[account.id];
+          await log(cmd, character ? `Charakter ${character.name}` : undefined, account.name, next);
+          if (cmd === 'ban') disconnect(account.id);
+          return {};
+        });
       }
       if (request.cmd !== 'kick' && request.cmd !== 'gold' && request.cmd !== 'give') return 'Unbekannter Admin-Befehl';
 
@@ -112,5 +167,5 @@ export function createAdmin(store: Store, configuredUsers: () => string | undefi
     });
   }
 
-  return { allows, handle };
+  return { allows, handle, isMuted, isBanned, mayResume };
 }

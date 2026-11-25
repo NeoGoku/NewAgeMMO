@@ -17,6 +17,8 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
           VITE_DEFAULT_SERVER: ${{ vars.NAM_SERVER_URL }}
+          VITE_VALHALLA_URL: ${{ vars.NAM_VALHALLA_URL }}
+          VITE_PROPERTY_CATALOG_URL: ${{ vars.NAM_PROPERTY_CATALOG_URL }}
       - run: cp apps/web/dist/index.html apps/web/dist/404.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

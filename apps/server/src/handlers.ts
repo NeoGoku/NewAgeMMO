@@ -8,7 +8,8 @@ import { useSkill, usePotion, profGain, startGather, heal, locOf, addFx, ev, can
 import { startTravel, teleportTo, joinLoc } from './world';
 import { acceptQuest, turnIn, availableAt, readyAt, questEvent, dailyReset } from './quests';
 import { regionalNpcNearby } from './geo-world';
-export type Handler = (p: Player, m: any, receivedAt?: number) => string | null | void | Record<string, any>;
+type HandlerResult = string | null | void | Record<string, any>;
+export type Handler = (p: Player, m: any, receivedAt?: number) => HandlerResult | Promise<HandlerResult>;
 export const H: Record<string, Handler> = {};
 export const NO_CHAR = new Set(['walk', 'target', 'auto', 'skill', 'hotbar', 'ping', 'emote', 'chat', 'npc', 'gather', 'autoFarm', 'profile', 'houseList', 'shop']);
 const S = (v: any, n = 64) => (typeof v === 'string' ? v.slice(0, n) : '');

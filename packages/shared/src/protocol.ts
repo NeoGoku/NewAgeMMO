@@ -5,7 +5,7 @@ export interface AdminAuditEntry {
   id: string;
   at: number;
   actor: string;
-  action: 'announce' | 'kick' | 'gold' | 'give' | 'respawn';
+  action: 'announce' | 'kick' | 'gold' | 'give' | 'respawn' | 'mute' | 'unmute' | 'ban' | 'unban';
   target?: string;
   detail?: string;
 }
@@ -17,6 +17,7 @@ export interface AdminDashboard {
   uptime: number;
   store: string;
   players: { id: string; name: string; level: number }[];
+  restrictions: { account: string; muted: boolean; banned: boolean }[];
   audit: AdminAuditEntry[];
 }
 export const NAME_RE = /^[A-Za-zÄÖÜäöüß0-9_\- ]{3,16}$/;

@@ -12,3 +12,5 @@ Abhängigkeiten (MIT/Apache): react, react-dom, vite, vite-plugin-pwa, ws, pg, t
 - Optionale regionale Orientierungspunkte: OpenStreetMap (ODbL). Ein konfigurierter Online-Server fragt einen Overpass-Dienst mit begrenzten regionalen Anfragen ab. Prozedurale Regionen bleiben bei Ausfällen spielbar.
 
 Die Designs Underground, Urban, Vintage, Adventure und Cyber kombinieren eigene Farben und Linienregeln mit OSM-Vektordaten von OpenFreeMap. Spielporträts und Marker stammen aus demselben prozeduralen Spiel-Client in allen Ansichten.
+
+Immobilienkataloge und Valhalla-Geometrien können auf OpenStreetMap (ODbL) beruhen. Beim Bereitstellen eines Katalogs Quellenbezug, Datenstand und die ODbL-Bedingungen mitführen. Es werden keine ALKIS-Daten ausgeliefert. Die fünf Kartenvorschauen sind eigene schematische Zeichnungen und laden keine Kacheln.

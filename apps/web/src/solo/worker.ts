@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { createCore, type SockLike } from '../../../server/src/core';
 import { IdbStore, withSoloLock } from './idbstore';
+import { readPropertyCatalogResponse } from '../../../server/src/property-catalog-response';
 
 let core: Awaited<ReturnType<typeof createCore>> | undefined;
 let message: ((data: string) => void) | undefined;
@@ -20,7 +21,19 @@ async function open() {
       if (sock.readyState !== 1) return;
       const store = new IdbStore();
       try {
-        core = await createCore(store);
+        const catalogUrl = import.meta.env.VITE_PROPERTY_CATALOG_URL;
+        let propertyCatalog: unknown;
+        if (catalogUrl) {
+          const url = new URL(catalogUrl, new URL(import.meta.env.BASE_URL, worker.location.origin));
+          if (url.origin !== worker.location.origin) throw new Error('Der Solo-Immobilienkatalog muss vom selben Web-Ursprung stammen.');
+          try {
+            const response = await fetch(url, { signal: AbortSignal.timeout(4000), credentials: 'same-origin', redirect: 'error' });
+            propertyCatalog = await readPropertyCatalogResponse(response);
+          } catch (error) {
+            console.warn('solo_property_catalog', String(error));
+          }
+        }
+        core = await createCore(store, { routingUrl: import.meta.env.VITE_VALHALLA_URL, propertyCatalog });
         if (sock.readyState !== 1) {
           await core.shutdown();
           return;

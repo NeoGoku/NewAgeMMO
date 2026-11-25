@@ -9,11 +9,17 @@
 - Solo-Backups behalten das vorhandene IndexedDB-Format und werden ausschließlich aus dem Titelmenü eingespielt. Der Service Worker bietet Updates am Titelbildschirm an. Audio trennt Musik, Umgebung und Effekte.
 - Offen bleiben Live-Nachweis aller Kartenquellen, Installation auf einem physischen Android-Gerät sowie Live-Nachweis des externen Overpass-Endpunkts. Für künftige APK-Updates über dieselbe Installation muss dieselbe Signatur verwendet werden.
 
+## Kartenmenü, persistente Reisen und Immobilien
+
+- Kartenansicht direkt oberhalb der Zoomtasten und in den Spieleinstellungen. Typ und Style können unabhängig gewechselt werden. Die alten Einstellungen werden gelesen und in das getrennte Schema übernommen.
+- Valhalla liefert Straßenverläufe. Start, Pause, Fortsetzen, Abbruch und Zielwechsel verwenden dieselbe zeitbasierte, gespeicherte Reise. Online gilt die Serverzeit. Zu Fuß und Rennen stehen direkt bereit, Fahrrad, Reittier und Flug nutzen Ausrüstung, Motorfahrzeuge Level-Freigaben. Geocoding und öffentlicher Routendienst sind offen.
+- Die erste Immobilienregion nutzt bereitgestellte OSM-Wohngebäude. Grundriss und geographische Fläche stammen aus dem Katalog. Wohnfläche, Geschosse und Zimmer sind Schätzungen. Marktfilter berücksichtigen Preis, Typ, Geschossfläche und Entfernung. Kauf und Rückverkauf verwenden Spielgold. Die Schnellreise prüft den Besitz serverseitig. Ohne Katalog sind die verifizierten Funktionen nur mit Testdaten geprüft. Vermietung, Bebauung, ALKIS und weitere Immobilienarten stehen aus.
+
 ## Regionale Inhalte und Online-Moderation
 
 - Die Tagesquest „Die Gegend erkunden“ speichert ein regionales Zielgebiet und zählt die Ankunft serverseitig. Wenn ein öffentlicher OSM-Punkt im Cache liegt, ist das Ziel auch per GPS erreichbar. Generierte Fallback-Ziele zählen ausschließlich im virtuellen Modus.
 - Migration 004 hält verifizierte öffentliche OSM-Punkte de-dupliziert mit Ablaufdatum in PostgreSQL. PostGIS nutzt einen räumlichen Index. Ohne Erweiterung stehen SQL-Koordinatenfilter und der bestehende Speicher-Cache bereit.
-- Online-Administratoren erhalten ein Dashboard für Serverstatus, Ankündigungen, Kick und Audit. Adminrechte werden auf dem Server geprüft. Mute, Ban und öffentliche Mehrspieler-Betriebsprüfung stehen aus.
+- Online-Administratoren erhalten ein Dashboard für Serverstatus, Ankündigungen, Kick und Audit. Adminrechte werden auf dem Server geprüft. Mute und Ban sind kontoweit für alle Charaktere des jeweiligen Kontos und lassen sich aufheben. Die öffentliche Mehrspieler-Betriebsprüfung steht aus.
 
 ## Persistenz auf dem Entwicklungsbranch
 - Kampf-Fortschritt und Logout werden nach erfolgreicher Speicherung bestätigt. Dateispeicher und PostgreSQL/PostGIS sind mit dem neuen Levelaufstieg-/Reconnect-Test geprüft. Solo-Worker und IndexedDB-Wiederherstellung sind im Chromium-Build unter `/NewAgeMMO/` geprüft.

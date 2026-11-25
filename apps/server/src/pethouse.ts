@@ -1,7 +1,8 @@
 import { BAL, RARITY_MULT, type PetInst, type Rarity } from '@nam/shared';
 import { ITEMS, SPECIES, FURN, ROOM_STYLES, EVO_LEVELS, LOCS, NPCS, petExp } from '@nam/game-data';
 import { G, now, uid, send, sys, toLoc, type Player, type House } from './state';
-import { H } from './handlers'; import { anchorHouse } from './geo';
+import { H } from './handlers'; import { anchorHouse, pushGeo } from './geo';
+import { propertyAccess, propertyPosition } from './geo-property';
 import { takeUid, giveInst, invAdd, rollRarity, mkItem } from './chars';
 import { profGain } from './game';
 import { joinLoc, leaveHouseSilent } from './world';
@@ -20,22 +21,48 @@ H.petRename = (p, m) => { const pet = petOf(p, S(m.uid)); const n = S(m.name, 16
 H.petRelease = (p, m) => { const pet = petOf(p, S(m.uid)); if (!pet) return 'Fehlt'; p.c.pets = p.c.pets.filter(x => x !== pet); if (p.c.activePet === pet.uid) p.c.activePet = null; p.dirty = true; };
 export function offlinePets(p: Player, away: number) { const mins = Math.min(away, BAL.offlineCap) / 60000; for (const pet of p.c.pets) pet.energy = Math.min(100, pet.energy + Math.floor(mins * 6)); }
 // ---- Wohnen ----
-export const capacity = (kind: string) => { const n = [...G.houses.values()].filter(h => h.kind === kind).length; return 24 * Math.max(1, Math.ceil((n + 1) / 18)); };
+export const capacity = (kind: string) => { const n = [...G.houses.values()].filter(h => h.kind === kind && !h.propertyId).length; return 24 * Math.max(1, Math.ceil((n + 1) / 18)); };
 const COLS = 12, ROWS = 8;
 const canEnter = (p: Player, h: House) => { if (h.kind === 'guild') return p.c.guildId === h.ownerId; if (h.ownerId === p.c.id) return true; if (h.rent && h.rent.tenant === p.c.id && h.rent.until > now()) return true; if (h.visit === 'all') return true; if (h.visit === 'friends') return (G.chars.get(h.ownerId)?.friends || []).includes(p.c.id); return false; };
 const canEdit = (p: Player, h: House) => h.kind === 'guild' ? (p.c.guildId === h.ownerId && (G.guilds.get(h.ownerId)?.members[p.id]?.rank ?? 0) >= 2) : h.ownerId === p.c.id;
-const hview = (h: House, p: Player) => ({ id: h.id, kind: h.kind, owner: h.ownerName, slot: h.slot, style: h.style, floors: h.floors, furniture: h.furniture, visit: h.visit, edit: canEdit(p, h), stash: canEdit(p, h) ? h.stash : undefined, garden: h.garden, rent: h.rent, cols: COLS, rows: ROWS });
+const hview = (h: House, p: Player) => ({ id: h.id, kind: h.kind, owner: h.ownerName, slot: h.slot, propertyId: h.propertyId, style: h.style, floors: h.floors, furniture: h.furniture, visit: h.visit, edit: canEdit(p, h), stash: canEdit(p, h) ? h.stash : undefined, garden: h.garden, rent: h.rent, cols: COLS, rows: ROWS });
 const hsave = (h: House) => G.store.put('houses', h.id, h);
 const hsync = (h: House) => { const occ = G.houseOcc.get(h.id); if (!occ) return; const vis = [...occ].map(v => ({ id: v.id, name: v.c.name, cls: v.c.cls, look: v.c.look })); for (const q of occ) send(q, { t: 'house', h: hview(h, q), visitors: vis }); };
 const myHouse = (p: Player) => (p.houseId ? G.houses.get(p.houseId) : undefined);
-H.houseList = (p) => { const kind = p.loc === 'gildenviertel' ? 'guild' : 'player'; const list = [...G.houses.values()].filter(h => h.kind === kind); send(p, { t: 'houses', kind, capacity: capacity(kind), cost: kind === 'guild' ? 20000 : BAL.houseCost, list: list.map(h => ({ id: h.id, slot: h.slot, owner: h.ownerName, style: h.style, floors: h.floors, open: canEnter(p, h), rent: h.rent && h.rent.until < now() ? h.rent.price : undefined })), mine: p.c.houseId }); };
+H.houseList = (p) => { const kind = p.loc === 'gildenviertel' ? 'guild' : 'player'; const list = [...G.houses.values()].filter(h => h.kind === kind && !h.propertyId); send(p, { t: 'houses', kind, capacity: capacity(kind), cost: kind === 'guild' ? 20000 : BAL.houseCost, list: list.map(h => ({ id: h.id, slot: h.slot, owner: h.ownerName, style: h.style, floors: h.floors, open: canEnter(p, h), rent: h.rent && h.rent.until < now() ? h.rent.price : undefined })), mine: p.c.houseId }); };
 H.houseBuy = (p) => { if (p.loc !== 'lindenhain') return 'Nur im Wohnviertel'; if (p.c.houseId) return 'Du besitzt bereits ein Haus'; if (!p.c.questsDone.includes('q_home')) return 'Schließe zuerst die Quest „Ein Dach über dem Kopf“ ab'; if (p.c.gold < BAL.houseCost) return `Kostet ${BAL.houseCost} Gold`;
-  const used = new Set([...G.houses.values()].filter(h => h.kind === 'player').map(h => h.slot)); let slot = 1; while (used.has(slot)) slot++; if (slot > capacity('player')) return 'Keine freie Parzelle'; p.c.gold -= BAL.houseCost;
+  const used = new Set([...G.houses.values()].filter(h => h.kind === 'player' && !h.propertyId).map(h => h.slot)); let slot = 1; while (used.has(slot)) slot++; if (slot > capacity('player')) return 'Keine freie Parzelle'; p.c.gold -= BAL.houseCost;
   const h: House = { id: uid('h'), kind: 'player', ownerId: p.c.id, ownerName: p.c.name, slot, style: 'modern', floors: 1, furniture: [], visit: 'friends', stash: [], garden: null, created: now() }; G.houses.set(h.id, h); p.c.houseId = h.id; anchorHouse(p, h); hsave(h); p.dirty = true; sys(p, `Haus Nr. ${slot} gehört jetzt dir!`, 'quest'); };
 H.guildHouseBuy = (p) => { if (p.loc !== 'gildenviertel') return 'Nur im Gildenviertel'; const g = p.c.guildId ? G.guilds.get(p.c.guildId) : null; if (!g || g.members[p.id].rank < 3) return 'Nur der Gildenanführer'; if (g.houseId) return 'Gilde besitzt bereits ein Haus'; if (g.level < 3) return 'Gildenstufe 3 nötig'; if (g.gold < 20000) return 'Gildenkasse: 20000 Gold nötig';
   const used = new Set([...G.houses.values()].filter(h => h.kind === 'guild').map(h => h.slot)); let slot = 1; while (used.has(slot)) slot++; g.gold -= 20000; const h: House = { id: uid('h'), kind: 'guild', ownerId: g.id, ownerName: g.name, slot, style: 'arcane', floors: 1, furniture: [], visit: 'private', stash: [], garden: null, created: now() }; G.houses.set(h.id, h); g.houseId = h.id; anchorHouse(p, h); hsave(h); G.store.put('guilds', g.id, g); };
-H.houseEnter = (p, m) => { const h = G.houses.get(S(m.id)); if (!h) return 'Haus nicht gefunden'; if (!canEnter(p, h)) return 'Kein Zutritt'; if (p.combatUntil > now()) return 'Im Kampf nicht möglich'; if (!(p.loc === 'lindenhain' || p.loc === 'gildenviertel') && !p.houseId) return 'Nur im Wohnviertel'; G.locs.get(p.loc)!.players.delete(p); leaveHouseSilent(p); p.houseId = h.id; p.houseFloor = 0; p.target = null; p.auto = false; p.autoFarm = null; (G.houseOcc.get(h.id) || G.houseOcc.set(h.id, new Set()).get(h.id)!).add(p); hsync(h); };
-H.houseLeave = (p) => { const h = myHouse(p); if (!h) return; leaveHouseSilent(p); const l = G.locs.get(h.kind === 'guild' ? 'gildenviertel' : 'lindenhain')!; p.loc = l.id; p.c.loc = l.id; l.players.add(p); p.x = p.dx = 50; p.y = p.dy = 82; p.c.hp = p.st.maxHp; p.c.res = p.st.maxRes; send(p, { t: 'enter', loc: l.id, x: p.x, y: p.y }); hsync(h); };
+H.houseEnter = (p, m) => {
+  const h = G.houses.get(S(m.id));
+  if (!h) return 'Haus nicht gefunden';
+  if (!canEnter(p, h)) return 'Kein Zutritt';
+  if (p.combatUntil > now()) return 'Im Kampf nicht möglich';
+  if (h.propertyId) {
+    const position = propertyPosition(h);
+    if (!position) return 'Immobilienposition nicht verfügbar';
+    const error = propertyAccess(p, position);
+    if (error) return error;
+    if (!p.geo?.gps) H.geoStop(p, {});
+    const arrivalError = propertyAccess(p, position);
+    if (arrivalError) return arrivalError;
+    p.gather = p.pending = null;
+  } else if (myHouse(p)?.propertyId || (!(p.loc === 'lindenhain' || p.loc === 'gildenviertel') && !p.houseId)) {
+    return 'Nur im Wohnviertel';
+  }
+  G.locs.get(p.loc)!.players.delete(p);
+  leaveHouseSilent(p);
+  p.houseId = h.id;
+  p.houseFloor = 0;
+  p.target = null;
+  p.auto = false;
+  p.autoFarm = null;
+  (G.houseOcc.get(h.id) || G.houseOcc.set(h.id, new Set()).get(h.id)!).add(p);
+  hsync(h);
+};
+H.houseLeave = (p) => { const h = myHouse(p); if (!h) return; leaveHouseSilent(p); const l = G.locs.get(h.propertyId ? p.loc : h.kind === 'guild' ? 'gildenviertel' : 'lindenhain')!; p.loc = l.id; p.c.loc = l.id; l.players.add(p); p.x = p.dx = 50; p.y = p.dy = 82; p.c.hp = p.st.maxHp; p.c.res = p.st.maxRes; send(p, { t: 'enter', loc: l.id, x: p.x, y: p.y }); if (h.propertyId) pushGeo(p); hsync(h); };
 const fits = (h: House, id: string | null, furn: string, x: number, y: number, rot: number, floor: number) => { const d = FURN[furn]; const [w, hh] = rot % 2 ? [d.h, d.w] : [d.w, d.h]; if (x < 0 || y < 0 || x + w > COLS || y + hh > ROWS) return false; return !h.furniture.some(f => f.id !== id && f.floor === floor && (() => { const e = FURN[f.furn]; const [fw, fh] = f.rot % 2 ? [e.h, e.w] : [e.w, e.h]; return x < f.x + fw && f.x < x + w && y < f.y + fh && f.y < y + hh; })()); };
 H.housePlace = (p, m) => { const h = myHouse(p); if (!h || !canEdit(p, h)) return 'Keine Berechtigung'; const it = p.c.inventory.find(i => i.uid === S(m.uid)); if (!it || !FURN[it.id]) return 'Kein Möbelstück'; const x = Math.floor(Number(m.x)), y = Math.floor(Number(m.y)), rot = (Math.floor(Number(m.rot)) || 0) & 3, floor = Math.max(0, Math.min(h.floors - 1, Math.floor(Number(m.floor)) || 0)); if (h.furniture.length >= 120) return 'Zu viele Möbel'; if (!fits(h, null, it.id, x, y, rot, floor)) return 'Passt dort nicht'; takeUid(p.c.inventory, it.uid, 1); h.furniture.push({ id: uid('f'), furn: it.id, x, y, rot, floor }); hsave(h); hsync(h); p.dirty = true; };
 H.houseMove = (p, m) => { const h = myHouse(p); if (!h || !canEdit(p, h)) return 'Keine Berechtigung'; const f = h.furniture.find(i => i.id === S(m.id)); if (!f) return 'Fehlt'; const x = Math.floor(Number(m.x)), y = Math.floor(Number(m.y)), rot = (Math.floor(Number(m.rot)) || 0) & 3; if (!fits(h, f.id, f.furn, x, y, rot, f.floor)) return 'Passt dort nicht'; f.x = x; f.y = y; f.rot = rot; hsave(h); hsync(h); };
@@ -43,8 +70,8 @@ H.houseRemove = (p, m) => { const h = myHouse(p); if (!h || !canEdit(p, h)) retu
 H.houseStyle = (p, m) => { const h = myHouse(p); if (!h || !canEdit(p, h)) return 'Keine Berechtigung'; const st = ROOM_STYLES.find(s => s.id === S(m.style, 12)); if (!st) return 'Unbekannt'; if (st.id !== h.style) { if (h.kind === 'player' && p.c.gold < st.price) return `Kostet ${st.price} Gold`; if (h.kind === 'player') p.c.gold -= st.price; h.style = st.id; } hsave(h); hsync(h); p.dirty = true; };
 H.houseFloor = (p) => { const h = myHouse(p); if (!h || !canEdit(p, h) || h.kind !== 'player') return 'Keine Berechtigung'; if (h.floors >= 3) return 'Maximal 3 Etagen'; const cost = BAL.floorCost * h.floors; if (p.c.gold < cost) return `Kostet ${cost} Gold`; p.c.gold -= cost; h.floors++; hsave(h); hsync(h); p.dirty = true; };
 H.houseVisit = (p, m) => { const h = myHouse(p); if (!h || h.ownerId !== p.c.id) return 'Nur der Besitzer'; const v = S(m.mode, 8); if (!['all', 'friends', 'private'].includes(v)) return 'Ungültig'; h.visit = v as any; hsave(h); hsync(h); };
-H.houseRent = (p, m) => { const h = myHouse(p); if (!h || h.ownerId !== p.c.id) return 'Nur der Besitzer'; const price = Math.max(0, Math.min(1e6, Math.floor(Number(m.price)) || 0)); h.rent = price ? { tenant: '', tenantName: '', price, until: 0 } : null; hsave(h); hsync(h); };
-H.houseRentTake = (p, m) => { const h = G.houses.get(S(m.id)); if (!h || !h.rent || h.rent.until > now()) return 'Nicht zu mieten'; if (p.c.gold < h.rent.price) return 'Nicht genug Gold'; p.c.gold -= h.rent.price; const o = G.chars.get(h.ownerId); if (o) { o.mail.push({ id: uid('ml'), from: 'Miete', subject: `Miete von ${p.c.name}`, gold: h.rent.price, items: [], t: now() }); } h.rent.tenant = p.c.id; h.rent.tenantName = p.c.name; h.rent.until = now() + 864e5; hsave(h); p.dirty = true; sys(p, 'Haus für 24 h gemietet.'); };
+H.houseRent = (p, m) => { const h = myHouse(p); if (!h || h.ownerId !== p.c.id) return 'Nur der Besitzer'; if (h.propertyId) return 'Vermietung ist für Parzellen verfügbar'; const price = Math.max(0, Math.min(1e6, Math.floor(Number(m.price)) || 0)); h.rent = price ? { tenant: '', tenantName: '', price, until: 0 } : null; hsave(h); hsync(h); };
+H.houseRentTake = (p, m) => { const h = G.houses.get(S(m.id)); if (!h || h.propertyId || !h.rent || h.rent.until > now()) return 'Nicht zu mieten'; if (p.c.gold < h.rent.price) return 'Nicht genug Gold'; p.c.gold -= h.rent.price; const o = G.chars.get(h.ownerId); if (o) { o.mail.push({ id: uid('ml'), from: 'Miete', subject: `Miete von ${p.c.name}`, gold: h.rent.price, items: [], t: now() }); } h.rent.tenant = p.c.id; h.rent.tenantName = p.c.name; h.rent.until = now() + 864e5; hsave(h); p.dirty = true; sys(p, 'Haus für 24 h gemietet.'); };
 H.houseStash = (p, m) => { const h = myHouse(p); if (!h || !canEdit(p, h)) return 'Keine Berechtigung'; if (!h.furniture.some(f => FURN[f.furn]?.kind === 'chest')) return 'Stelle eine Lagertruhe auf'; const cap = h.furniture.filter(f => FURN[f.furn]?.kind === 'chest').length * 60; if (m.put) { const it = takeUid(p.c.inventory, S(m.uid), Math.max(1, Number(m.qty) | 0 || 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it, h.stash, cap)) { giveInst(p.c, it); return 'Truhe voll'; } } else { const it = takeUid(h.stash, S(m.uid), Math.max(1, Number(m.qty) | 0 || 1)); if (!it) return 'Fehlt'; if (!giveInst(p.c, it)) { giveInst(p.c, it, h.stash, 999); return 'Inventar voll'; } } hsave(h); hsync(h); p.dirty = true; };
 H.houseGarden = (p) => { const h = myHouse(p); if (!h || !canEdit(p, h)) return 'Keine Berechtigung'; if (!h.furniture.some(f => f.furn === 'furn_garden')) return 'Stelle ein Kräuterbeet auf'; if (!h.garden) { h.garden = { plantedAt: now() }; sys(p, 'Kräuter gepflanzt (reif in 10 Min., auch offline).'); } else if (now() - h.garden.plantedAt >= 600e3) { const t = Math.min(9, Math.floor(p.c.level / 10)); invAdd(p.c, `m_herb_${t}`, 8 + Math.floor(Math.random() * 6)); h.garden = null; profGain(p, 'herbalism', 20 + t * 10); sys(p, 'Ernte eingebracht!', 'loot'); } else return `Noch ${Math.ceil((600e3 - (now() - h.garden.plantedAt)) / 60e3)} Min.`; hsave(h); hsync(h); p.dirty = true; };
 H.houseRest = (p) => { const h = myHouse(p); if (!h) return 'Nicht zu Hause'; p.c.hp = p.st.maxHp; p.c.res = p.st.maxRes; if (h.furniture.some(f => f.furn === 'furn_petbed')) for (const pt of p.c.pets) pt.energy = 100; sys(p, 'Du ruhst dich aus.'); };

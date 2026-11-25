@@ -2,10 +2,11 @@ import http from 'node:http'; import fs from 'node:fs'; import path from 'node:p
 import { WebSocketServer } from 'ws';
 import { makeStore } from './store-node'; import { G } from './state'; import { createCore, log } from './core'; import { LOCS, NPCS } from '@nam/game-data';
 import { configureOsm } from './geo-osm';
+import { readPropertyCatalog } from './property-file';
 const PORT = Number(process.env.PORT || 8080);
 async function main() {
   const store = makeStore();
-  const core = await createCore(store, { adminUsers: () => process.env.ADMIN_USERS });
+  const core = await createCore(store, { propertyCatalog: await readPropertyCatalog(process.env.PROPERTY_CATALOG_GEOJSON), adminUsers: () => process.env.ADMIN_USERS, routingUrl: process.env.VALHALLA_URL });
   configureOsm(process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter', store.osmCache);
   const server = http.createServer((req, res) => {
     const cors = { 'access-control-allow-origin': '*' };

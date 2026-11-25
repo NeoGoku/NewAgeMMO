@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { GEO_ANCHORS, QUESTS } from '@nam/game-data';
 import { distanceLabel, questCategory, questPins } from '../src/geo/quest-map';
-import { applyMapPreferences, MAP_DESIGNS, mapPreferences, mapStyle, saveMapPreferences } from '../src/geo/map-style';
+import { applyMapPreferences, MAP_TYPES, MAP_STYLES, mapThemePreview, mapPreferences, mapStyle, saveMapPreferences } from '../src/geo/map-style';
 
 const storage = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', { value: {
@@ -10,7 +10,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: {
 } });
 assert.equal(mapPreferences().kind, 'standard');
 assert.ok(mapPreferences().brightness > 50, 'standard brightness must not clip the basemap at half');
-const saved = { kind: 'satellite' as const, brightness: 92, zoom: 15, bearing: 27, pitch: 36 };
+const saved = { kind: 'satellite' as const, style: null, follow: false, brightness: 92, zoom: 15, bearing: 27, pitch: 36 };
 saveMapPreferences(saved);
 assert.deepEqual(mapPreferences(), saved);
 const satellite = mapStyle(saved);
@@ -40,10 +40,16 @@ assert.equal(regionalObjective?.radius, 90);
 assert.equal(regionalObjective?.virtualOnly, true);
 console.log('✓ Kartentyp, Helligkeit, Kameraeinstellungen, lokalisierte Questrollen und regionale Zielwahl');
 
+storage.set('nam.map.preferences', '{"kind":"vintage","zoom":13}');
+assert.equal(mapPreferences().kind, 'standard');
+assert.equal(mapPreferences().style, 'vintage');
+assert.equal(mapPreferences().zoom, 13);
+
 const paints = new Set<string>();
-for (const design of MAP_DESIGNS) {
-  saveMapPreferences({ ...saved, kind: design.id });
-  assert.deepEqual(mapPreferences(), { ...saved, kind: design.id });
+for (const { id: kind } of MAP_TYPES) for (const { id: style } of MAP_STYLES) {
+  const preferences = { ...saved, kind, style };
+  saveMapPreferences(preferences);
+  assert.deepEqual(mapPreferences(), preferences);
   const layers = new Map<string, any>(mapStyle(saved).layers.map(layer => [layer.id, layer]));
   layers.set('quest-line', { id: 'quest-line', layout: { visibility: 'visible' } });
   const sourceIds = new Set<string>();
@@ -55,10 +61,16 @@ for (const design of MAP_DESIGNS) {
     setPaintProperty: (id: string, prop: string, value: unknown) => (layers.get(id).paint ??= {})[prop] = value,
     setLayoutProperty: (id: string, prop: string, value: unknown) => (layers.get(id).layout ??= {})[prop] = value
   };
-  applyMapPreferences(fakeMap as any, { ...saved, kind: design.id });
+  applyMapPreferences(fakeMap as any, preferences);
   assert.equal(layers.get('quest-line').layout.visibility, 'visible');
-  assert.equal(layers.get('satellite').layout.visibility, design.id === 'satellite' ? 'visible' : 'none');
-  if (layers.get('theme-road')?.layout.visibility === 'visible') paints.add(layers.get('theme-road').paint['line-color']);
+  assert.equal(layers.get('satellite').layout.visibility, kind === 'satellite' ? 'visible' : 'none');
+  assert.equal(layers.get('buildings').layout.visibility, kind === 'buildings' ? 'visible' : 'none');
+  assert.equal(layers.get('theme-road').layout.visibility, 'visible');
+  assert.equal(layers.get('theme-building').layout.visibility, kind === 'standard' ? 'visible' : 'none');
+  paints.add(layers.get('theme-road').paint['line-color']);
 }
-assert.equal(MAP_DESIGNS.length, 8);
-assert.equal(paints.size, 5, 'each original theme has its own road palette');
+assert.equal(MAP_TYPES.length, 3);
+assert.equal(paints.size, 5);
+assert.equal(new Set(MAP_STYLES.map(({ id }) => mapThemePreview(id))).size, 5);
+assert.ok(MAP_STYLES.every(({ id }) => mapThemePreview(id).startsWith('data:image/svg+xml,')));
+console.log('✓ 15 Kartenkombinationen und Migration bisheriger Kartenstile');

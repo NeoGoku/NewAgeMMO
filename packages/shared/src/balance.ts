@@ -7,8 +7,18 @@ export const BAL = {
   prestigeExp: 400000, prestigePerRankStat: 0.01, pvpNormLevel: 60, pvpPointsPerLevel: 1.1, partyMax: 10, invSize: 80, stashSize: 80,
   offlineCap: 8 * 3600e3, autoFarmMaxMs: 20 * 60e3, autoFarmRadius: 100, travelBaseMs: 1500, moveSpeed: 14,
   dayLengthMs: 24 * 60e3, weatherMs: 4 * 60e3, resetStonePrice: 0, auctionFee: 0.05, guildCreateCost: 5000, guildMax: 50,
-  houseCost: 2500, floorCost: 8000, repairPerPoint: 0.6,
+  houseCost: 2500, propertyGoldPerM2: 10, propertyM2PerRoom: 28, propertyMaxGold: 90000, propertyResaleRate: .75, floorCost: 8000, repairPerPoint: 0.6,
 };
+export const GEO_TRAVEL_MODES = {
+  walk: { label: 'Gehen', speedMps: 2.5, level: 1 },
+  run: { label: 'Laufen', speedMps: 7, level: 1 },
+  bike: { label: 'Fahrrad', speedMps: 12, level: 5 },
+  mount: { label: 'Reittier', speedMps: 18, level: 15 },
+  motorbike: { label: 'Motorrad', speedMps: 26, level: 25 },
+  car: { label: 'Auto', speedMps: 34, level: 40 },
+  fly: { label: 'Fliegen', speedMps: 45, level: 60 },
+} as const;
+export type GeoTravelMode = keyof typeof GEO_TRAVEL_MODES;
 export const expToNext = (lv: number) => Math.floor(BAL.expBase * Math.pow(lv, BAL.expExp));
 export const bonusPointCost = (n: number) => Math.floor(BAL.bonusBase * Math.pow(BAL.bonusGrowth, n));
 export interface ClassBase { attrs: Attrs; atkAttr: Attr[]; res: string; resMax: number; resRegen: number; melee: boolean; blockBase: number; hpMult: number }

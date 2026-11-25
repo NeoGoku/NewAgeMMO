@@ -33,10 +33,14 @@ const KIND_SFX: Record<string, string> = { crit: 'crit', dmg: 'hit', heal: 'heal
 net.on((m: Msg) => {
   switch (m.t) {
     case 'kicked': {
+      if (m.banned) {
+        saveToken(net.url, '');
+        set({ token: '' });
+      }
       net.close();
       stopGameAudio();
       set({ screen: 'title', admin: false, char: null, panel: null, dialog: null, snap: null, travel: null, died: null, inScene: false });
-      toast('Die Moderation hat deine Verbindung getrennt.', 'moderation');
+      toast(m.banned ? 'Dein Account wurde gesperrt.' : 'Die Moderation hat deine Verbindung getrennt.', 'moderation');
       break;
     }
     case 'state': {

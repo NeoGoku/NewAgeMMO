@@ -35,9 +35,17 @@ Der Server liefert den gebauten Web-Client (`apps/web/dist`) mit aus. Die APK nu
 
 ## Reale Erde
 
-Die Weltkarte ist die Hauptansicht. Der virtuelle Modus unterstützt Tippen und einen Touch-Joystick. GPS nutzt die bestätigte Geräteposition. Wähle zwischen Standard, Underground, Urban, Vintage, Adventure, Cyber, Satellit und 3D City. Kartendesign, Helligkeit, Zoom, Drehung und Neigung bleiben gespeichert. Die Satellitenansicht bietet eine globale Übersicht; für Straßen und Gebäude sind Standard und 3D vorgesehen. Die vorhandenen Spielorte bleiben verankert, während regionale NPCs, Monster, Eliten, Ressourcen und Bosse auch außerhalb dieser Orte erscheinen. Der Online-Server ergänzt öffentliche Orientierungspunkte aus OpenStreetMap und hält sie bei PostgreSQL auch über Neustarts vor.
+Die Weltkarte ist die Hauptansicht. Der virtuelle Modus unterstützt Tippen und einen Touch-Joystick. GPS nutzt die bestätigte Geräteposition. Kartendesign, Helligkeit, Zoom, Drehung und Neigung bleiben gespeichert. Die Satellitenansicht bietet eine globale Übersicht; für Straßen und Gebäude sind Standard und 3D vorgesehen. Die vorhandenen Spielorte bleiben verankert, während regionale NPCs, Monster, Eliten, Ressourcen und Bosse auch außerhalb dieser Orte erscheinen. Der Online-Server ergänzt öffentliche Orientierungspunkte aus OpenStreetMap und hält sie bei PostgreSQL auch über Neustarts vor.
 
-Über die Questdetails lassen sich Questgeber, Zielgebiet und Abgabe auf der Karte verfolgen. Die GPS-Navigation zeigt die Richtung zum Ziel als Luftlinie. Im virtuellen Modus startet sie eine Route innerhalb der verfügbaren Reichweite. Die Tagesquest „Die Gegend erkunden“ weist ein serverseitig bestimmtes Zielgebiet in der jeweiligen Region zu.
+Über die Questdetails lassen sich Questgeber, Zielgebiet und Abgabe auf der Karte verfolgen. Die GPS-Navigation zeigt die Richtung zum Ziel als Luftlinie. Im virtuellen Modus öffnet sie die Routenplanung. Die Tagesquest „Die Gegend erkunden“ weist ein serverseitig bestimmtes Zielgebiet in der jeweiligen Region zu.
+
+## Kartenansicht, Reisen und Immobilien
+
+Das Kartensymbol rechts oberhalb der Zoomtasten und **Mehr → Einstellungen → Kartenansicht** öffnen dasselbe Menü. Wähle Kartentyp und Kartenstyle getrennt. Fünf eigene Vorschaubilder erleichtern die Auswahl. Satellit nutzt den Style für die eingeblendeten Straßen, 3D zusätzlich für Gebäude.
+
+Tippe im virtuellen Modus auf ein Ziel und wähle **Reise starten**, sobald eine Route und Reisezeit vorliegen. Straßen und Wege werden von einem konfigurierten Valhalla-Dienst geliefert. Der Joystick funktioniert ohne Routendienst. Eine gestartete Reise läuft nach Schließen der App zeitbasiert weiter, sofern sie nicht pausiert ist.
+
+**Mehr → Immobilien** zeigt bei eingerichtetem Katalog die verfügbare Region und den eigenen Schnellreisepunkt. Die angebotenen Gebäude sind virtuelle Spielobjekte. Einrichtung und Lager verwenden das bestehende Housing. Die [Konfiguration](docs/DEPLOYMENT.md) erklärt Routing und den Braunschweig-Import.
 
 ## Solo-Spielstand sichern
 

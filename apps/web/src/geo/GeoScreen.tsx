@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { GEO, haversine, type GeoObj, type GeoPlayer } from '@nam/shared';
+import { GEO, haversine, type GeoObj, type GeoPlayer, type GeoTravelMode, type GeoTravelView } from '@nam/shared';
 import { set, useS } from '../store';
 import { MOBS, QUESTS } from '@nam/game-data';
 import { mobIconUrl, portraitUrl } from '../render';
+import { RoutePlanner, TravelStatus, type RouteLine, type RouteTarget } from './RoutePlanner';
+import { MapDesignMenu } from './MapDesignMenu';
 import { Joystick } from './Joystick';
-import { applyMapPreferences, MAP_DESIGNS, mapPreferences, mapStyle, saveMapPreferences, type MapKind } from './map-style';
+import { applyMapPreferences, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
 import { distanceLabel, pinLabels, questPins, type QuestPinRole } from './quest-map';
 import { geoBus } from './bus';
 import { net } from '../net';
@@ -16,7 +18,7 @@ import { audio } from '../audio';
 const KEY = 'nam.geo.consent';
 type Consent = 'gps' | 'virtual';
 type Mode = 'gps' | 'virtual';
-interface Me { lat: number; lon: number; mode?: string; regionLabel?: string; speed?: number; etaSeconds?: number; dest?: { lat: number; lon: number } | null; flags?: string[] }
+interface Me { lat: number; lon: number; mode?: string; regionLabel?: string; speed?: number; etaSeconds?: number; dest?: { lat: number; lon: number } | null; flags?: string[]; travel?: GeoTravelView | null; travelModes?: GeoTravelMode[] }
 interface Destination { id: string; name: string; cost: number }
 
 const readConsent = (): Consent => { try { const v = localStorage.getItem(KEY); return v === 'gps' ? 'gps' : 'virtual'; } catch { return 'virtual'; } };
@@ -44,6 +46,19 @@ const CSS = `
 .geo button{background:#06121fe6;color:#cdeeff;border:1px solid #1ee8ff66;border-radius:12px;min-width:44px;min-height:44px;padding:0 10px;font:inherit;box-shadow:0 0 12px #1ee8ff22}
 .geo button.on{background:#0c3a4acc;border-color:#5ef2ff;box-shadow:0 0 16px #5ef2ff66}
 .geo .side button{width:44px;padding:0}
+.geo .side .map-settings-toggle{display:grid;place-items:center;border-color:#75def3;background:#092333}
+.geo .map-settings-head button{min-width:34px;min-height:34px;padding:0}
+.geo .settings [role=tablist] button{flex:1;min-height:40px;padding:0 6px}
+.geo .map-types{display:grid;gap:6px}
+.geo .map-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.geo .map-previews button{display:grid;gap:4px;padding:4px;min-width:0;min-height:0;font-size:11px}
+.geo .map-previews img{display:block;width:100%;height:auto;border-radius:6px}
+.geo .settings .reset-theme{margin-top:6px;min-height:32px}
+.geo .settings details label{margin-top:8px}
+.geo .route-panel{position:absolute;z-index:8;left:50%;translate:-50% 0;bottom:calc(var(--navh) + 55px + var(--sab));width:min(358px,calc(100% - 20px));max-height:48%;overflow:auto;display:grid;gap:7px;padding:10px 12px;border:1px solid #52d2e6;border-radius:12px;background:#061824f7;box-shadow:0 8px 32px #0009}
+.geo .route-panel button{min-height:40px;min-width:0}
+.geo .route-panel label{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.geo .route-pin{width:19px;height:19px;border-radius:50% 50% 50% 0;border:2px solid #fbfbdb;background:#ffac4e;box-shadow:0 0 10px #ffac4e;pointer-events:none}
 .geo .mk{border-radius:50%;border:2px solid #ffffffaa;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;box-shadow:0 0 12px currentColor;position:relative;cursor:pointer}
 .geo .mk.near{box-shadow:0 0 0 3px #5ef2ff,0 0 18px #5ef2ff}
 .geo .mk .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;margin-top:2px;text-shadow:0 1px 2px #000,0 0 6px #000;pointer-events:none}
@@ -61,7 +76,7 @@ const CSS = `
 @media(prefers-reduced-motion:reduce){.geo .mob-token img,.geo .mk.boss{animation:none}}
 .geo button.geo-stick{position:absolute;left:calc(14px + var(--sal));bottom:calc(var(--navh) + 16px + var(--sab));width:88px;height:88px;padding:0;border-radius:50%;touch-action:none;background:#05132156;border:1px solid #66e6fbaf;display:grid;place-items:center;z-index:6}
 .geo-stick span{width:31px;height:31px;border-radius:100%;background:#38dcf6a0;border:1px solid #abf9ff;box-shadow:0 0 14px #22c5e466;pointer-events:none}
-.geo .settings{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(238px,calc(100% - 82px));display:grid;gap:10px;background:#051421f2;border:1px solid #67d7e8;border-radius:12px;padding:12px}
+.geo .settings{position:absolute;z-index:10;right:calc(62px + var(--sar));top:50%;transform:translateY(-50%);width:min(290px,calc(100% - 82px));max-height:calc(100% - 100px - var(--sat) - var(--sab));overflow:auto;display:grid;gap:10px;background:#051421f2;border:1px solid #67d7e8;border-radius:12px;padding:12px}
 .geo .settings label{display:grid;gap:4px}
 .geo .quest-track{position:absolute;left:50%;transform:translateX(-50%);width:min(330px,calc(100% - 26px));bottom:calc(var(--navh) + 120px + var(--sab));z-index:5;border:1px solid #ffd87090;background:#111d27ed;border-radius:12px;padding:8px 10px;font-size:12px}
 .geo .quest-track .row{gap:4px;flex-wrap:wrap}
@@ -100,7 +115,14 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const [preferences, setPreferences] = useState(mapPreferences);
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
+  const [routeTarget, setRouteTarget] = useState<RouteTarget | null>(null);
+  const [previewLine, setPreviewLine] = useState<RouteLine | null>(null);
+  const [activeLine, setActiveLine] = useState<RouteLine | null>(null);
+  const [travel, setTravel] = useState<GeoTravelView | null>(null);
+  const [pickTarget, setPickTarget] = useState(false);
+  const routePin = useRef<maplibregl.Marker | null>(null);
   const [mapSettings, setMapSettings] = useState(false);
+  blockedRef.current ||= mapSettings;
   const [mapError, setMapError] = useState('');
   const [questTrack, setQuestTrack] = useState<{ id: string; role: QuestPinRole; navigate: boolean } | null>(null);
   const questStates = useS(s => s.char?.quests);
@@ -115,7 +137,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const [destinations, setDestinations] = useState<{ portal: string; rows: Destination[] } | null>(null);
   const [eta, setEta] = useState(0);
   const [mode, setMode] = useState<Mode>(readConsent);
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(preferences.follow);
   const [bearing, setBearing] = useState(0);
   const [info, setInfo] = useState({ n: 0, speed: 0, flags: [] as string[], hasMe: false });
   const [sel, setSel] = useState<string | null>(null);
@@ -131,13 +153,13 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const onStop = () => { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); };
     const onWipe = () => { void wipe(); };
     const onRecenter = () => { const p = myPos(); if (p && mapRef.current) { followRef.current = true; setFollow(true); mapRef.current.easeTo({ center: [p.lon, p.lat], zoom: mapRef.current.getZoom() }); } };
-    const onWalk = (e: Event) => { const d = (e as CustomEvent).detail; if (d) void walkTo(d.lat, d.lon); };
+    const onWalk = (e: Event) => { const d = (e as CustomEvent).detail; if (d) walkTo(d.lat, d.lon, d.name, d.address); };
     const onQuest = (e: Event) => {
       const detail = (e as CustomEvent).detail as { id: string; role: QuestPinRole; navigate: boolean };
       if (!QUESTS[detail.id]) return;
       setQuestTrack(detail);
     };
-    const L: [string, EventListener][] = [['toggleMode', onMode], ['stop', onStop], ['wipe', onWipe], ['recenter', onRecenter], ['walkTo', onWalk], ['quest', onQuest]];
+    const L: [string, EventListener][] = [['toggleMode', onMode], ['stop', onStop], ['wipe', onWipe], ['recenter', onRecenter], ['walkTo', onWalk], ['quest', onQuest], ['mapSettings', () => setMapSettings(true)]];
     L.forEach(([t, f]) => geoBus.addEventListener(t, f)); return () => L.forEach(([t, f]) => geoBus.removeEventListener(t, f));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -182,19 +204,19 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     map.on('click', e => {
       if (blockedRef.current || (e.originalEvent.target as HTMLElement).closest('.mk,.quest-pin')) return;
       setSel(null);
-      if (modeRef.current === 'virtual' && meRef.current) { void walkTo(e.lngLat.lat, e.lngLat.lng); }
+      if (modeRef.current === 'virtual' && meRef.current) walkTo(e.lngLat.lat, e.lngLat.wrap().lng);
     });
-    return () => { mkObj.current.forEach(o => o.m.remove()); mkObj.current.clear(); mkPl.current.forEach(m => m.remove()); mkPl.current.clear(); meMk.current?.remove(); meMk.current = null; questMarkers.current.forEach(m => m.remove()); questMarkers.current.clear(); map.remove(); mapRef.current = null; };
+    return () => { mkObj.current.forEach(o => o.m.remove()); mkObj.current.clear(); mkPl.current.forEach(m => m.remove()); mkPl.current.clear(); meMk.current?.remove(); meMk.current = null; questMarkers.current.forEach(m => m.remove()); questMarkers.current.clear(); routePin.current?.remove(); routePin.current = null; map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    saveMapPreferences(preferences);
-  }, [preferences]);
+    saveMapPreferences({ ...preferences, follow });
+  }, [preferences, follow]);
   useEffect(() => {
     const map = mapRef.current;
     if (map?.getLayer('osm')) applyMapPreferences(map, preferencesRef.current);
-  }, [preferences.kind, preferences.brightness]);
+  }, [preferences.kind, preferences.style, preferences.brightness]);
 
   function setMapKind(kind: MapKind) {
     setMapError('');
@@ -203,9 +225,15 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     setPreferences(next);
     if (kind === 'buildings' && next.pitch < 25) mapRef.current?.easeTo({ pitch: 48, zoom: Math.max(mapRef.current.getZoom(), 15) });
   }
-  async function walkTo(lat: number, lon: number) {
-    const result = await net.req('geoWalk', { lat, lon });
-    if (result.t === 'err') toast(result.err, 'err');
+  function setMapTheme(style: MapTheme | null) {
+    setMapError('');
+    setPreferences({ ...preferencesRef.current, style });
+  }
+  function walkTo(lat: number, lon: number, name?: string, address?: string) {
+    if (modeRef.current !== 'virtual') return;
+    setSel(null);
+    setPickTarget(false);
+    setRouteTarget({ lat, lon, name, address });
   }
 
   moveAvatar.current = me => {
@@ -248,7 +276,11 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       const sig = `${o.name}|${o.lvl}|${isN}|${boss}|${elite}`; let rec = mkObj.current.get(o.id);
       if (!rec) {
         const el = document.createElement('button'); el.type = 'button'; el.setAttribute('aria-label', o.name); const m = new maplibregl.Marker({ element: el }).setLngLat([o.lon, o.lat]).addTo(map);
-        el.addEventListener('click', ev => { ev.stopPropagation(); setSel(o.id); }); rec = { m, el, sig: '' }; mkObj.current.set(o.id, rec);
+        el.addEventListener('click', ev => { ev.stopPropagation();
+          if (o.k === 'house' && o.def === 'property') {
+            set({ panel: 'geoProperty', selected: { id: o.id }, navPanel: 'more', dialog: null });
+            setSel(null);
+          } else setSel(o.id); }); rec = { m, el, sig: '' }; mkObj.current.set(o.id, rec);
       }
       rec.m.setLngLat([o.lon, o.lat]);
       if (rec.sig !== sig) {
@@ -285,12 +317,33 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const cities = objs.filter(o => o.k === 'city' && o.r).map(o => poly(o.lat, o.lon, o.r!));
     const routeLine = (target: { lat: number; lon: number } | null | undefined) => target && me ?
       [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[me.lon, me.lat], [target.lon, target.lat]] } }] : [];
-    const line = routeLine(targetRef.current);
+    const roadmap = previewLine ?? activeLine;
+    let previousLon = roadmap?.points[0]?.lon ?? 0;
+    const line = roadmap && roadmap.points.length > 1 ? [{
+      type: 'Feature', properties: {}, geometry: {
+        type: 'LineString', coordinates: roadmap.points.map(({ lat, lon }) => {
+          previousLon = lon + 360 * Math.round((previousLon - lon) / 360);
+          return [previousLon, lat];
+        })
+      }
+    }] : [];
+    const destination = routeTarget ?? travel?.target;
+    if (destination) {
+      if (!routePin.current) {
+        const marker = document.createElement('div');
+        marker.className = 'route-pin';
+        routePin.current = new maplibregl.Marker({ element: marker, anchor: 'bottom' });
+        routePin.current.setLngLat([destination.lon, destination.lat]).addTo(map);
+      } else routePin.current.setLngLat([destination.lon, destination.lat]);
+    } else {
+      routePin.current?.remove();
+      routePin.current = null;
+    }
     (map.getSource('ranges') as maplibregl.GeoJSONSource | undefined)?.setData(fc(ranges));
     (map.getSource('cities') as maplibregl.GeoJSONSource | undefined)?.setData(fc(cities));
     (map.getSource('line') as maplibregl.GeoJSONSource | undefined)?.setData(fc(line));
     (map.getSource('quest-area') as maplibregl.GeoJSONSource | undefined)?.setData(fc(pins.filter(p => p.radius).map(p => poly(p.lat, p.lon, p.radius!))));
-    (map.getSource('quest-route') as maplibregl.GeoJSONSource | undefined)?.setData(fc(questTrack?.navigate ? routeLine(questTarget) : []));
+    (map.getSource('quest-route') as maplibregl.GeoJSONSource | undefined)?.setData(fc(questTrack?.navigate && modeRef.current === 'gps' ? routeLine(questTarget) : []));
 
     const mapPins = new Set<string>();
     for (const pin of pins) {
@@ -323,7 +376,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       if (questTrack.navigate && me && modeRef.current === 'virtual' && distance <= 200000) {
         followRef.current = true;
         setFollow(true);
-        void walkTo(questTarget.lat, questTarget.lon);
+        walkTo(questTarget.lat, questTarget.lon, questTarget.name);
       } else {
         followRef.current = false;
         setFollow(false);
@@ -335,11 +388,18 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   // Server-Pakete
   useEffect(() => {
     const off = net.on(m => {
+      if (m.t === 'geoRoute') { setActiveLine(m.route as RouteLine | null); return; }
       if (m.t === 'geoMotion') {
         const me = m.position as Me | undefined;
         if (me && (!me.mode || me.mode === modeRef.current)) {
           meRef.current = me;
           moveAvatar.current(me);
+          if (me.travel !== undefined) setTravel(previous => {
+            const current = me.travel ?? null;
+            return current && previous?.id === current.id && previous.status === current.status &&
+              previous.etaSeconds === current.etaSeconds && Math.floor(previous.remainingM) === Math.floor(current.remainingM)
+              ? previous : current;
+          });
           const time = performance.now();
           if (me.speed && time - lastStepAt.current > 340 && !blockedRef.current) {
             lastStepAt.current = time;
@@ -367,6 +427,8 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         for (const [id, mk] of mkPl.current) if (!seen.has(id)) { mk.remove(); mkPl.current.delete(id); }
       }
       targetRef.current = me?.dest ?? null;
+      if (me?.travel !== undefined) setTravel(me.travel);
+      if (m.off || m.pending) { setTravel(null); setActiveLine(null); }
       setWalking(!!me?.dest);
       setEta(me?.etaSeconds ?? 0);
       setInfo({ n: objsRef.current.length, speed: me?.speed ?? 0, flags: me?.flags ?? [], hasMe: !!me });
@@ -411,10 +473,15 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
   useEffect(() => { redraw.current(); }, [follow, mode, questTrack, questStates, pins.map(p => p.lat + ':' + p.lon).join('|')]);
 
+  useEffect(() => { redraw.current(); }, [routeTarget, previewLine, activeLine]);
   function choose(c: Mode) {
     saveConsent(c);
     modeRef.current = c;
     if (c === 'gps') {
+      setRouteTarget(null);
+      setPickTarget(false);
+      setTravel(null);
+      setActiveLine(null);
       meRef.current = null;
       objsRef.current = [];
       centered.current = false;
@@ -473,18 +540,15 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
       </div>
       <div className="side">
+        <button type="button" className={mapSettings ? 'on map-settings-toggle' : 'map-settings-toggle'} onClick={() => setMapSettings(v => !v)} aria-label="Karteneinstellungen" aria-controls="map-settings" aria-expanded={mapSettings}>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m3 6 6-2 6 2 6-2v14l-6 2-6-2-6 2zm6-2v14m6-12v14"/></svg>
+        </button>
         <button onClick={() => zoom(1)} aria-label="Hineinzoomen">＋</button>
         <button onClick={() => zoom(-1)} aria-label="Herauszoomen">−</button>
         <button onClick={() => mapRef.current?.easeTo({ bearing: 0 })} aria-label="Nach Norden ausrichten" style={{ transform: `rotate(${-bearing}deg)` }}>N</button>
         <button className={follow ? 'on' : ''} onClick={() => { const p = myPos(); setFollow(f => !f); if (p && !follow) mapRef.current?.easeTo({ center: [p.lon, p.lat] }); }} aria-label="Figur folgen" aria-pressed={follow}>◎</button>
-        <button className={mapSettings ? 'on' : ''} onClick={() => setMapSettings(v => !v)} aria-label="Karteneinstellungen" aria-expanded={mapSettings}>≡</button>
       </div>
-      {mapSettings && <section className="settings" aria-label="Karteneinstellungen">
-        <label>Kartentyp
-          <select value={preferences.kind} onChange={e => setMapKind(e.target.value as MapKind)}>
-            {MAP_DESIGNS.map(design => <option key={design.id} value={design.id}>{design.label}</option>)}
-          </select>
-        </label>
+      {mapSettings && <MapDesignMenu value={preferences} onType={setMapKind} onStyle={setMapTheme} onClose={() => setMapSettings(false)}>
         <label>Helligkeit · {preferences.brightness} %
           <input type="range" min="40" max="100" value={preferences.brightness} onChange={e => setPreferences({ ...preferencesRef.current, brightness: Number(e.target.value) })} />
         </label>
@@ -495,10 +559,16 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           <input type="range" min="0" max="65" value={Math.round(preferences.pitch)} onChange={e => mapRef.current?.setPitch(Number(e.target.value))} />
         </label>
         {gpsErr && <button onClick={() => setGpsRetry(n => n + 1)}>GPS erneut versuchen</button>}
-      </section>}
-      {!hidden && !controlsBlocked && !mapSettings && mode === 'virtual' && info.hasMe &&
-        <Joystick bearing={() => mapRef.current?.getBearing() ?? 0} onStart={() => { setSel(null); setFollow(true); followRef.current = true; }} />}
-      {trackedQuest && !o && <section className="quest-track" aria-label="Quest auf der Karte">
+      </MapDesignMenu>}
+      {!hidden && !controlsBlocked && !mapSettings && !routeTarget && !travel && mode === 'virtual' && info.hasMe &&
+        <Joystick bearing={() => mapRef.current?.getBearing() ?? 0} onStart={() => { setRouteTarget(null); setPickTarget(false); setSel(null); setFollow(true); followRef.current = true; }} />}
+      {!hidden && !controlsBlocked && !mapSettings && mode === 'virtual' && me && routeTarget &&
+        <RoutePlanner target={routeTarget} start={me} available={me.travelModes ?? ['walk', 'run']}
+          onGeometry={setPreviewLine} onClose={() => setRouteTarget(null)} onStarted={() => setRouteTarget(null)} />}
+      {!hidden && !controlsBlocked && !mapSettings && mode === 'virtual' && !routeTarget && travel && !pickTarget &&
+        <TravelStatus travel={travel} onReroute={() => setPickTarget(true)} />}
+      {pickTarget && !routeTarget && <div className="route-panel row"><span className="grow">Neues Ziel auf der Karte antippen</span><button type="button" onClick={() => setPickTarget(false)}>Zurück</button></div>}
+      {trackedQuest && !o && !routeTarget && !travel && <section className="quest-track" aria-label="Quest auf der Karte">
         <div className="row"><b className="grow">{trackedQuest.name}</b><button aria-label="Questmarkierungen schließen" onClick={() => setQuestTrack(null)}>×</button></div>
         {questTarget && <div>{pinLabels[questTarget.role]} · {questTarget.name}{questDistance !== null && ' · ' + distanceLabel(questDistance)}</div>}
         {questStates?.[trackedQuest.id] && <div>{trackedQuest.goals.map((goal, i) => <span key={i}>{i > 0 && ' · '}{questProgress[i] ?? 0}/{goal.n}{goal.label ? ' ' + goal.label : ''}</span>)}</div>}
@@ -520,7 +590,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           )}
           <div className="row">
             {inRange ? !portal && <button className="on" disabled={busy} onClick={() => interact(o.id)}>{o.k === 'teleporter' ? 'Ziele anzeigen' : o.k === 'mob' ? 'Angreifen' : 'Interagieren'}</button>
-              : mode === 'virtual' ? <button className="on" onClick={() => walkTo(o.lat, o.lon)}>Hinlaufen</button>
+              : mode === 'virtual' ? <button className="on" onClick={() => walkTo(o.lat, o.lon, o.name, o.extra?.address)}>Route planen</button>
               : <button disabled>Zu weit entfernt</button>}
             <button onClick={() => { setSel(null); setDestinations(null); }}>Schließen</button>
           </div>

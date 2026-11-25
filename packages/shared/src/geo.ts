@@ -1,3 +1,5 @@
+import type { GeoTravelMode } from './balance';
+
 /** Geo-Protokoll & Hilfsfunktionen (Client + Server). Koordinaten: WGS84 Grad. */
 export const GEO = {
   cellDeg: 0.0025, // ≈ 280 m Rasterzelle für dynamische Spawns
@@ -14,11 +16,26 @@ export const GEO = {
 export type GeoKind = 'mob' | 'node' | 'dungeon' | 'city' | 'house' | 'npc' | 'station' | 'poi' | 'teleporter';
 export interface GeoObj { id: string; k: GeoKind; def: string; lat: number; lon: number; name: string; lvl?: number; fam?: string; role?: string; r?: number; extra?: any }
 export interface GeoPlayer { id: string; name: string; cls: string; lvl: number; lat: number; lon: number }
+export interface GeoCoord { lat: number; lon: number }
+export interface GeoRoute { id: string; points: GeoCoord[] }
+export interface GeoRoutePreview extends GeoRoute {
+  target: GeoCoord; mode: GeoTravelMode; totalM: number; etaSeconds: number; speedMps: number; label?: string;
+}
+export interface GeoTravelView {
+  id: string; mode: GeoTravelMode; status: 'moving' | 'paused' | 'arrived';
+  target: GeoCoord; remainingM: number; totalM: number; etaSeconds: number;
+}
+export interface SavedGeoTrip extends GeoRoute {
+  target: GeoCoord; mode: GeoTravelMode; speedMps: number; progressM: number; startedAt: number | null;
+}
 export interface GeoPosition {
   lat: number; lon: number; mode: 'gps' | 'virtual'; dest: { lat: number; lon: number } | null;
   speed: number; etaSeconds: number; flags: string[]; gpsM: number; dayM: number; regionLabel: string;
+  travel?: GeoTravelView | null; travelModes?: GeoTravelMode[];
 }
-/** Server→Client: geo{me,objs,players,rev}, geo{pending,flags,objs,players,rev}, geoMotion{position}. Client→Server: geoConsent{on,gps}, geoPos{lat,lon,acc,mode}, geoWalk{lat,lon}, geoSteer{north,east}, geoStop{}, geoInteract{id}, geoWipe{}. */
+/** Server→Client: geo{me,objs,players,rev}, geoMotion{position}, geoRoute{route}.
+ * Client→Server: geoRoutePreview{lat,lon,mode}, geoRouteStart{lat,lon,mode,previewId?}, geoRoutePause{}, geoRouteResume{}, geoRouteCancel{}.
+ * Other map controls: geoConsent{on,gps}, geoPos{lat,lon,acc,mode}, geoSteer{north,east}, geoInteract{id}, geoWipe{}. */
 export const R_EARTH = 6371008.8;
 export const rad = (d: number) => d * Math.PI / 180;
 export const wrapLon = (longitude: number) => ((longitude + 180) % 360 + 360) % 360 - 180;

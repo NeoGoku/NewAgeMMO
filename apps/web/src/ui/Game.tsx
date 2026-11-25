@@ -5,11 +5,12 @@ import { GameCanvas } from './GameCanvas'; import { Bar, skillIcon, useTick, fmt
 import { Inventory, Character, MapPanel, QuestPanel } from './Panels1'; import { CraftPanel, PetsPanel, HousePanel, HousesList } from './Panels2'; import { GuildPanel, SocialPanel, MarketPanel, TradePanel, ProfilePanel, ArenaPanel } from './Panels3'; import { Dialog } from './Dialog';
 import { GeoScreen } from '../geo'; import { geoDo, geoBus } from '../geo/bus'; import { OptionsBody } from './Screens';
 import { isSoloServer, net } from '../net';
+import { GeoPropertyPanel } from './GeoPropertyPanel';
 import { AdminPanel } from './AdminPanel';
 
 /** Ereignisleiste: fünf Hauptbereiche. */
 const NAV: [string, string][] = [['map', 'Karte'], ['char', 'Helden'], ['inv', 'Inventar'], ['quest', 'Quests'], ['more', 'Mehr']];
-const MORE: [string, string][] = [['craft', 'Berufe'], ['pets', 'Pets'], ['house', 'Haus'], ['guild', 'Gilde'], ['social', 'Soziales'], ['market', 'Markt'], ['map2', 'Ortsliste'], ['opt', 'Menü & Optionen']];
+const MORE: [string, string][] = [['craft', 'Berufe'], ['pets', 'Pets'], ['geoProperty', 'Immobilien'], ['guild', 'Gilde'], ['social', 'Soziales'], ['market', 'Markt'], ['map2', 'Ortsliste'], ['opt', 'Einstellungen']];
 const ICON: Record<string, React.ReactNode> = {
   map: <svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" /><path d="M9 4v14M15 6v14" /></svg>,
   char: <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4 4-6 8-6s7 2 8 6" /></svg>,
@@ -20,6 +21,7 @@ const ICON: Record<string, React.ReactNode> = {
 export function Game() {
   const char = useS(s => s.char)!; const snap = useS(s => s.snap); const panel = useS(s => s.panel); const dialog = useS(s => s.dialog); const travel = useS(s => s.travel); const died = useS(s => s.died); const conn = useS(s => s.conn); const house = useS(s => s.house); const inScene = useS(s => s.inScene);
   const geoMode = useS(s => s.geoMode); const walking = useS(s => s.geoWalking); const navPanel = useS(s => s.navPanel); const chatOpen = useS(s => s.hudChat); const scale = useS(s => s.settings.uiScale);
+  const selectedProperty = useS(s => s.selected?.id as string | undefined);
   const canAdmin = useS(s => s.admin && !isSoloServer(s.settings.server));
   useTick(250); const me = snap?.me; const cb = CLASS_BASE[char.cls]; const need = char.level >= BAL.maxLevel ? BAL.prestigeExp : expToNext(char.level); const expv = char.level >= BAL.maxLevel ? char.pexp : char.exp;
   const [more, setMore] = useState(false);
@@ -27,7 +29,7 @@ export function Game() {
   useEffect(() => { const h = (e: Event) => { const d = (e as CustomEvent).detail; set({ geoMode: d.mode, geoWalking: d.walking }); setGeoRegion(d.region); }; geoBus.addEventListener('state', h); return () => geoBus.removeEventListener('state', h); }, []);
   useEffect(() => { const kd = (e: KeyboardEvent) => { const t = e.target as HTMLElement; if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) { if (e.key === 'Escape') t.blur(); return; } const k = e.key.toLowerCase(); const hb = state.char?.hotbar; if (k >= '1' && k <= '6' && hb && state.inScene) { const id = hb[+k - 1]; if (id) cast(id); } else if (k === ' ' && state.inScene) { e.preventDefault(); act('auto', { on: !view.snap?.me.auto }); } else if (k === 'i') nav('inv'); else if (k === 'c') nav('char'); else if (k === 'q') nav('quest'); else if (k === 'escape') { set({ panel: null, dialog: null, navPanel: '' }); setMore(false); } else if (k === 'enter') set({ hudChat: true }); }; window.addEventListener('keydown', kd); return () => window.removeEventListener('keydown', kd); }, []);
   const nav = (p: string) => { audio.sfx('click'); if (p === 'map') { set({ panel: null, navPanel: '', dialog: null }); setMore(false); geoDo('recenter'); return; } if (p === 'more') { setMore(m => !m); return; } setMore(false); if (p === 'house') act('houseList'); if (p === 'guild') act('guildInfo'); if (p === 'social') act('friends'); if (p === 'market') act('market', { kind: 'ah' }); set({ panel: state.panel === p ? null : p, navPanel: p, dialog: null }); };
-  const more2 = (p: string) => { setMore(false); if (p === 'map2') { set({ panel: 'map', navPanel: 'more' }); return; } if (p === 'opt') { set({ panel: 'opt', navPanel: 'more' }); return; } nav(p); set({ navPanel: 'more' }); };
+  const more2 = (p: string) => { setMore(false); if (p === 'geoProperty') { set({ panel: p, selected: null, navPanel: 'more', dialog: null }); return; } if (p === 'map2') { set({ panel: 'map', navPanel: 'more' }); return; } if (p === 'opt') { set({ panel: 'opt', navPanel: 'more' }); return; } nav(p); set({ navPanel: 'more' }); };
   const cast = (id: string) => { audio.unlock(); act('skill', { id }); };
   const tgtMob = me?.target ? snap?.mobs.find((m: any) => m.uid === me.target) : null; const tgtPl = me?.target && !tgtMob ? snap?.players.find((p: any) => p.id === me.target) : null;
   const inCombat = inScene && !!(me?.combat || tgtMob);
@@ -61,10 +63,10 @@ export function Game() {
     <Toasts /><Invites />
     {/* Panels & Dialoge */}
     {panel === 'inv' && <Inventory />}{panel === 'char' && <Character />}{panel === 'map' && <MapPanel />}{panel === 'quest' && <QuestPanel />}{panel === 'craft' && <CraftPanel />}{panel === 'pets' && <PetsPanel />}{panel === 'houses' && <HousesList />}
-    {panel === 'house' && (house ? null : <HousesList />)}{house && <HousePanel />}
+    {panel === 'geoProperty' && !house && <GeoPropertyPanel id={selectedProperty} />}{(panel === 'house' || panel === 'houses') && !house && <HousesList />}{house && <HousePanel />}
     {panel === 'guild' && <GuildPanel />}{panel === 'social' && <SocialPanel />}{panel === 'market' && <MarketPanel />}{panel === 'trade' && <TradePanel />}{panel === 'profile' && <ProfilePanel />}{panel === 'arena' && <ArenaPanel />}
     {panel === 'admin' && canAdmin && <AdminPanel />}
-    {panel === 'opt' && <div className="win c1" style={{ maxHeight: '86vh' }}><header><span>⚙ Menü</span><button className="btn sm x" onClick={() => set({ panel: null })}>✕</button></header><div className="body"><OptionsBody ingame /><div className="hr" /><div className="row wrap"><button className="btn" onClick={() => { geoDo('wipe'); }}>Meine Standortdaten löschen</button><button className="btn" onClick={async () => { set({ panel: null }); await logoutChar(); }}>Charakter wechseln</button><button className="btn" onClick={async () => { if (await logoutChar()) set({ screen: 'title' }); }}>Zum Titelbildschirm</button></div></div></div>}
+    {panel === 'opt' && <div className="win c1" style={{ maxHeight: '86vh' }}><header><span>⚙ Menü</span><button className="btn sm x" onClick={() => set({ panel: null })}>✕</button></header><div className="body"><button className="btn" disabled={inScene} onClick={() => { set({ panel: null }); geoDo('mapSettings'); }}>Kartenansicht</button><div className="hr" /><OptionsBody ingame /><div className="hr" /><div className="row wrap"><button className="btn" onClick={() => { geoDo('wipe'); }}>Meine Standortdaten löschen</button><button className="btn" onClick={async () => { set({ panel: null }); await logoutChar(); }}>Charakter wechseln</button><button className="btn" onClick={async () => { if (await logoutChar()) set({ screen: 'title' }); }}>Zum Titelbildschirm</button></div></div></div>}
     {dialog && <Dialog />}
     {travel && <Travel />}{died && <Died />}
     {conn !== 'ok' && <div className="connection-status" role="status">Verbindung unterbrochen · erneuter Versuch</div>}

@@ -1,0 +1,158 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createCore, type SockLike } from '../src/core';
+import { MemoryStore } from '../src/store';
+import { G } from '../src/state';
+import { PropertyCatalog } from '../src/geo-property-data';
+import { readPropertyCatalog } from '../src/property-file';
+
+const square = [
+  [10.5268, 52.2689], [10.5269, 52.2689], [10.5269, 52.2690],
+  [10.5268, 52.2690], [10.5268, 52.2689],
+];
+// Synthetic geometry used only to exercise the import and transaction boundaries.
+const feature = {
+  type: 'Feature', id: 'way/1234', properties: { building: 'residential', 'building:levels': '2' },
+  geometry: { type: 'Polygon', coordinates: [square] },
+};
+const catalog = {
+  type: 'FeatureCollection', source: 'OpenStreetMap', osmSnapshot: '2026-08-01T00:00:00Z',
+  features: [feature],
+};
+const location = { lat: 52.26895, lon: 10.52685 };
+
+class Socket implements SockLike {
+  readyState = 1;
+  messages: any[] = [];
+  private pending = new Map<number, (reply: any) => void>();
+  private next = 0;
+  private handler!: (raw: string) => void;
+  send(raw: string) {
+    const msg = JSON.parse(raw);
+    this.messages.push(msg);
+    this.pending.get(msg.rid)?.(msg);
+    this.pending.delete(msg.rid);
+  }
+  close() { this.readyState = 3; }
+  on(event: 'message' | 'close', fn: (raw: string) => void) {
+    if (event === 'message') this.handler = fn;
+  }
+  req(t: string, args = {}) {
+    const rid = ++this.next;
+    return new Promise<any>(resolve => {
+      this.pending.set(rid, resolve);
+      this.handler(JSON.stringify({ t, rid, ...args }));
+    });
+  }
+}
+
+assert.throws(() => new PropertyCatalog({ ...catalog, source: 'Unknown' }), /Herkunft/);
+assert.throws(() => new PropertyCatalog({ ...catalog, features: [feature, feature] }), /Doppeltes OSM/);
+assert.throws(() => new PropertyCatalog({
+  ...catalog, features: [{ ...feature, geometry: { ...feature.geometry, coordinates: [square.map(([lon, lat]) => [lon + 1, lat])] } }],
+}), /keine gültigen Wohngebäude/);
+
+const directory = await mkdtemp(path.join(os.tmpdir(), 'nam-property-'));
+const filename = path.join(directory, 'braunschweig.geojson');
+let imported: unknown;
+try {
+  await writeFile(filename, JSON.stringify(catalog));
+  imported = await readPropertyCatalog(filename);
+} finally {
+  await rm(directory, { recursive: true, force: true });
+}
+
+class FailableStore extends MemoryStore {
+  failNextFlush = false;
+  async flush() {
+    if (!this.failNextFlush) return;
+    this.failNextFlush = false;
+    throw new Error('test persistence failure');
+  }
+}
+
+const store = new FailableStore();
+const core = await createCore(store, { propertyCatalog: imported });
+let buyerId = '';
+try {
+  const player = async (name: string) => {
+    const socket = new Socket();
+    core.onConnection(socket);
+    assert.equal((await socket.req('register', { user: name, pass: 'a-password' })).t, 'ok');
+    const { id } = await socket.req('createChar', {
+      name, cls: 'archer',
+      look: { gender: 'm', face: 1, body: 1, hair: 2, hairColor: '#aa3311', tattoo: 0, skin: '#e0b090' },
+    });
+    assert.equal((await socket.req('enter', { id })).t, 'ok');
+    const active = G.players.get(id)!;
+    active.c.gold = 10000;
+    await socket.req('geoConsent', { on: true, gps: false });
+    return { socket, active };
+  };
+  let a = await player('MaklerOne');
+  let b = await player('MaklerTwo');
+  const id = 'property:osm:way:1234';
+  const details = await a.socket.req('geoPropertyList', { id });
+  assert.equal(details.t, 'ok', 'the configured OSM footprint is visible in the catalog');
+  const offer = details.list[0];
+  assert.equal(offer.id, id);
+  assert.equal(offer.footprintM2, 76);
+  assert.equal(offer.floorAreaM2, 152);
+  assert.equal(offer.estimatedRooms, 5);
+  assert.deepEqual(offer.footprint, feature.geometry);
+  assert.equal(offer.levelsEstimated, false);
+  assert.equal((await a.socket.req('geoPropertyBuy', { id })).t, 'err', 'remote purchase must fail');
+  for (const { active } of [a, b]) Object.assign(active.geo!, location);
+  store.failNextFlush = true;
+  assert.equal((await a.socket.req('geoPropertyBuy', { id })).t, 'err');
+  assert.equal(a.active.c.gold, 10000, 'failed purchase refunds gold');
+  assert.equal((await store.get('chars', a.active.id)).geoProperty, undefined, 'failed purchase restores the persisted claim');
+  const [buy, race] = await Promise.all([
+    a.socket.req('geoPropertyBuy', { id, price: 1, lat: 1, lon: 1 }),
+    b.socket.req('geoPropertyBuy', { id, price: 1, lat: 1, lon: 1 }),
+  ]);
+  assert.deepEqual([buy.t, race.t].sort(), ['err', 'ok'], 'exactly one concurrent request can buy the same footprint');
+  if (race.t === 'ok') [a, b] = [b, a];
+  assert.equal(a.active.c.gold, 10000 - offer.buyGold, 'server price overrides client values');
+  assert.equal((await store.get('chars', a.active.id)).geoProperty.id, id, 'ownership is durable when purchase succeeds');
+  assert.equal((await b.socket.req('geoPropertyTravel', { id })).t, 'err', 'non-owner cannot travel to the property');
+  a.active.geo!.gps = true;
+  assert.equal((await a.socket.req('geoPropertyTravel', { id })).t, 'err', 'fast travel cannot move a GPS player');
+  a.active.geo!.gps = false;
+  a.active.geo!.lat += 0.05;
+  assert.equal((await a.socket.req('geoPropertyTravel', { id })).t, 'ok');
+  assert.ok(Math.abs(a.active.geo!.lat - location.lat) < 0.000001);
+  const houseId = a.active.c.houseId!;
+  assert.equal((await a.socket.req('houseEnter', { id: houseId })).t, 'ok', 'the purchased property has a usable interior');
+  assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'err', 'an occupied property cannot be sold');
+  const housingLoc = a.active.loc;
+  await a.socket.req('houseLeave');
+  assert.equal(a.active.loc, housingLoc, 'leaving the interior resumes the same geographic area');
+  store.failNextFlush = true;
+  assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'err');
+  assert.equal(a.active.c.gold, 10000 - offer.buyGold, 'failed sale rolls back credit');
+  assert.equal((await store.get('chars', a.active.id)).geoProperty.id, id, 'failed sale preserves stored ownership');
+  const sale = await a.socket.req('geoPropertySell', { id, price: 1000000 });
+  assert.equal(sale.t, 'ok');
+  assert.ok(sale.gold < offer.buyGold && sale.gold > 0);
+  assert.equal(a.active.c.gold, 10000 - offer.buyGold + sale.gold);
+  assert.equal((await store.get('chars', a.active.id)).geoProperty, undefined);
+  assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'err', 'the same property cannot be sold twice');
+  assert.equal((await b.socket.req('geoPropertyBuy', { id })).t, 'ok', 'sold property becomes available again');
+  buyerId = b.active.id;
+} finally {
+  await core.shutdown();
+}
+G.chars.clear();
+G.houses.clear();
+const restarted = await createCore(store);
+try {
+  const owner = G.chars.get(buyerId)!;
+  const house = G.houses.get(owner.houseId!);
+  assert.ok(owner.geoProperty && house?.propertyId === owner.geoProperty.id, 'restart restores the interior even without an imported catalog');
+} finally {
+  await restarted.shutdown();
+}
+console.log('✓ Geographic property catalog, ownership, home travel and interior');
