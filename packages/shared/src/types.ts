@@ -35,7 +35,7 @@ export interface Character {
   prof: Record<string, { lvl: number; exp: number }>; pets: PetInst[]; activePet: string|null; summons: string[];
   craftJobs: CraftJob[]; mail: MailItem[]; friends: string[]; guildId: string|null; houseId: string|null;
   kills: Record<string, number>; discovered: string[]; settings: { autoPotion: boolean; autoLoot: boolean; autoQuest: boolean }; arenaPts: number; honor: number;
-  created: number; lastSeen: number; playtime: number; titles: string[];
+  created: number; lastSeen: number; playtime: number; titles: string[]; geo?: { consent: boolean; visible: boolean; qlat: number; qlon: number; gpsM: number; dayM: number; day: number };
 }
 export interface MobFamily { id: string; name: string }
 export const FAMILIES = ['beast','demon','human','robot','magic','elite','boss'] as const;

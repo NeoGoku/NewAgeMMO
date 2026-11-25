@@ -1,4 +1,4 @@
 { "name": "@nam/server", "version": "0.1.0", "private": true, "type": "module",
-  "scripts": { "dev": "tsx watch src/index.ts", "start": "tsx src/index.ts", "test": "tsx tests/smoke.ts" },
+  "scripts": { "dev": "tsx watch src/index.ts", "start": "tsx src/index.ts", "test": "tsx tests/smoke.ts && tsx tests/geo.ts" },
   "dependencies": { "@nam/shared": "*", "@nam/game-data": "*", "ws": "^8.18.0", "pg": "^8.13.1" },
   "devDependencies": { "tsx": "^4.19.2", "@types/ws": "^8.5.13", "@types/node": "^22.10.0", "@types/pg": "^8.11.10" } }

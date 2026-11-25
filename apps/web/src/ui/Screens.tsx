@@ -17,7 +17,7 @@ export function Title() {
     <div className="logo">NewAgeMMO</div><div className="tag">Aurelia · Anno 2030 · Magie ist öffentlich</div>
     <div className="menu"><button className="btn pri" onClick={() => { audio.unlock(); audio.sfx('click'); set({ screen: 'auth', authMode: 'register' }); }}>▶ Neues Spiel</button>
       <button className="btn" disabled={busy} onClick={loadGame}>{busy ? 'Verbinde…' : '⟳ Spiel laden'}</button><button className="btn" onClick={() => { audio.sfx('click'); set({ screen: 'options' }); }}>⚙ Optionen</button><button className="btn dng" onClick={() => { audio.sfx('click'); quit(); }}>⏻ Verlassen</button></div>
-    <div className="dim xs" style={{ position: 'absolute', bottom: 'calc(10px + var(--sab))' }}>Kostenlos · Keine Echtgeld-Shops · Alles erspielbar · v0.1 Alpha · Server: {state.settings.server}</div></div></div>;
+    <div className="dim xs" style={{ position: 'absolute', bottom: 'calc(10px + var(--sab))' }}>Kostenlos · Keine Echtgeld-Shops · Alles erspielbar · v0.1 Alpha · Modus: {state.settings.server.startsWith('solo') ? 'Solo (lokal im Browser)' : 'Online'}</div></div></div>;
 }
 export function Bye() { return <div className="app"><div className="title"><div className="logo" style={{ fontSize: 48 }}>Bis bald!</div><div className="dim">Danke fürs Spielen. Du kannst dieses Fenster / die App jetzt schließen.</div><button className="btn" onClick={() => set({ screen: 'title' })}>Zurück zum Titel</button></div></div>; }
 export function Auth() {
@@ -66,6 +66,7 @@ export function CharCreate() {
       <div className="dim sm">Hautton</div><div className="row wrap">{SKIN.map(c => <div key={c} className={`swatch${look.skin === c ? ' on' : ''}`} style={{ background: c }} onClick={() => setLook(l => ({ ...l, skin: c }))} />)}</div>
       {err && <div className="err">{err}</div>}<button className="btn pri" disabled={busy} onClick={create}>✔ Charakter erstellen (Platz {slot + 1})</button><button className="btn sm" onClick={() => set({ screen: 'chars' })}>← Abbrechen</button></div></div></div></div>;
 }
+const ONLINE_DEFAULT = ((import.meta as any).env?.VITE_DEFAULT_SERVER as string) || (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname.endsWith('github.io') ? 'newagemmo.onrender.com' : location.host);
 export function OptionsBody({ ingame }: { ingame?: boolean }) {
   const s = useS(x => x.settings); const up = (p: Partial<typeof s>) => { Object.assign(state.settings, p); set({ settings: { ...state.settings } }); applySettings(); };
   const Sl = ({ l, k }: { l: string; k: 'master' | 'music' | 'sfx' }) => <div><div className="row"><span className="grow">{l}</span><span className="dim">{Math.round(s[k] * 100)}%</span></div><input type="range" min={0} max={1} step={.05} value={s[k]} onChange={e => { up({ [k]: +e.target.value } as any); }} onPointerUp={() => audio.sfx('click')} /></div>;
@@ -74,7 +75,7 @@ export function OptionsBody({ ingame }: { ingame?: boolean }) {
     <div className="row"><span className="grow">Bildschirmwackeln</span><button className={`btn sm${s.shake ? ' on' : ''}`} onClick={() => up({ shake: !s.shake })}>{s.shake ? 'An' : 'Aus'}</button></div>
     <div className="row"><span className="grow">Grafikqualität (Partikel)</span><button className="btn sm" onClick={() => up({ quality: s.quality === 'high' ? 'low' : 'high' })}>{s.quality === 'high' ? 'Hoch' : 'Niedrig (Akku)'}</button></div>
     <div><div className="row"><span className="grow">Oberflächengröße</span><span className="dim">{Math.round(s.uiScale * 100)}%</span></div><input type="range" min={.8} max={1.4} step={.05} value={s.uiScale} onChange={e => up({ uiScale: +e.target.value })} /></div>
-    {!ingame && <div><div className="dim sm">Serveradresse (WebSocket)</div><input type="text" value={s.server} onChange={e => up({ server: e.target.value.trim() })} placeholder="wss://dein-server.example" /></div>}
+    {!ingame && <div><div className="dim sm">Spielmodus</div><div className="row wrap"><button className={`btn sm${s.server.startsWith('solo') ? ' on' : ''}`} onClick={() => up({ server: 'solo:' })}>Solo (lokal, offline)</button><button className={`btn sm${s.server.startsWith('solo') ? '' : ' on'}`} onClick={() => up({ server: ONLINE_DEFAULT })}>Online (Multiplayer)</button></div><div className="dim xs">Solo: dein Spielstand liegt lokal im Browser (IndexedDB), kein Server nötig. Online: gemeinsame Welt mit anderen Spielern.</div><div className="dim sm">Serveradresse (WebSocket)</div><input type="text" value={s.server} onChange={e => up({ server: e.target.value.trim() })} placeholder="wss://dein-server.example" /></div>}
     <button className="btn sm" onClick={() => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch { /* */ } }}>⛶ Vollbild</button>
     <div className="dim xs">Steuerung: Tippen/Klicken auf Boden = laufen · auf Gegner = angreifen · Skills 1–6 / Tasten 1–6 · Leertaste = Auto-Angriff · I Inventar, C Charakter, M Karte, Q Quests, Enter Chat.</div></div>;
 }

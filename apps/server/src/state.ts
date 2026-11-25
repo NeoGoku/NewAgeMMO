@@ -1,4 +1,4 @@
-import type { WebSocket } from 'ws';
+import type { SockLike } from './core';
 import type { Character, ItemInst, EvtView } from '@nam/shared';
 import type { Derived } from '@nam/shared';
 import type { MobDef, LocDef } from '@nam/game-data';
@@ -6,13 +6,14 @@ import type { Store } from './store';
 export interface Fx { k: string; until: number; v: number; src?: string; next?: number }
 export interface Account { id: string; name: string; hash: string; salt: string; created: number; tokens: { h: string; exp: number }[]; admin?: boolean; banned?: boolean }
 export interface Player {
-  id: string; c: Character; ws: WebSocket; acc: Account; loc: string; x: number; y: number; dx: number; dy: number;
+  id: string; c: Character; ws: SockLike; acc: Account; loc: string; x: number; y: number; dx: number; dy: number;
   target: string | null; auto: boolean; autoFarm: { until: number; hx: number; hy: number } | null; atkAt: number; cd: Record<string, number>; fx: Fx[];
   partyId: string | null; combatUntil: number; travel: { to: string; until: number; from: string } | null; gather: { uid: string; until: number } | null; pending: { kind: 'gather' | 'crate'; uid: string } | null;
   emote?: { k: string; until: number }; rid: number; tokens: number; tokAt: number; summons: { kind: string; until: number; next: number; pow: number }[]; dead: boolean; deadUntil: number;
   st: Derived; pvpSt: Derived | null; mods: any; duel: { opp: string; until: number } | null; trade: Trade | null; lastChat: number; lastSave: number; evq: EvtView[]; petAt: number; hits: number; resAcc: number;
-  houseId: string | null; houseFloor: number; online: boolean; shield: number; lastMsgSec: number; stunnedUntil: number; invites: { kind: string; from: string; until: number; data?: any }[]; dirty: boolean; lastAct: number;
+  houseId: string | null; houseFloor: number; online: boolean; shield: number; lastMsgSec: number; stunnedUntil: number; invites: { kind: string; from: string; until: number; data?: any }[]; dirty: boolean; lastAct: number; geo?: GeoState;
 }
+export interface GeoState { on: boolean; visible: boolean; lat: number; lon: number; has: boolean; mode: string; dest: { lat: number; lon: number } | null; lastT: number; strikes: number[]; lockUntil: number; flags: string[]; lastPush: number; day: number; dayM: number; visited: Set<string> }
 export interface Trade { id: string; a: string; b: string; offers: Record<string, { gold: number; uids: string[] }>; ready: Record<string, boolean> }
 export interface Mob { uid: string; def: MobDef; hp: number; maxHp: number; x: number; y: number; hx: number; hy: number; threat: Record<string, number>; dmg: Record<string, number>; target: string | null; atkAt: number; tick: number; fx: Fx[]; phase: number; dead: boolean; respawnAt: number; add: boolean; enrage: number; lastHit: number; skills: MobDef['skills']; lvl: number; flashT: number }
 export interface NodeS { uid: string; def: string; x: number; y: number; ready: boolean; respawnAt: number; hp: number }
@@ -23,7 +24,7 @@ export interface House { id: string; kind: 'player' | 'guild'; ownerId: string; 
 export interface Listing { id: string; kind: 'ah' | 'stall' | 'order'; seller: string; sellerName: string; item?: ItemInst; price: number; expires: number; want?: { id: string; qty: number }; created: number }
 export const G = {
   store: null as unknown as Store, players: new Map<string, Player>(), byName: new Map<string, Player>(), locs: new Map<string, LocState>(), parties: new Map<string, Party>(), guilds: new Map<string, Guild>(),
-  houses: new Map<string, House>(), houseOcc: new Map<string, Set<Player>>(), market: new Map<string, Listing>(), chars: new Map<string, Character>(), tradeSeq: 0, startedAt: Date.now(), stats: { msgs: 0, ticks: 0, tickMs: 0, saves: 0 },
+  houses: new Map<string, House>(), geoTaken: new Map<string, number>(), houseOcc: new Map<string, Set<Player>>(), market: new Map<string, Listing>(), chars: new Map<string, Character>(), tradeSeq: 0, startedAt: Date.now(), stats: { msgs: 0, ticks: 0, tickMs: 0, saves: 0 },
 };
 export const now = () => Date.now();
 export const rnd = (a: number, b: number) => a + Math.random() * (b - a);

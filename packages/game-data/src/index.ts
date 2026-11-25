@@ -12,3 +12,4 @@ export function validateData(): string[] {
   for (const s of Object.values(SKILLS)) if (!s.name) e.push('skill ' + s.id);
   return e;
 }
+export * from './geo';

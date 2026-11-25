@@ -8,3 +8,7 @@
 7. [offen] Admin-UI, Moderation (Mute/Ban), Backup-Automation.
 8. [offen] Android-UX: Gesten, Akku-Modus, Landscape-Feintuning; Zielgerät testen.
 9. [offen] Handgemachte Endassets (siehe ASSET_LICENSES.md).
+
+## v2-Stand
+- [implementiert/geprüft] Geo-System (Server: Spawns, Anti-Cheat, Datenschutz; Client: MapLibre/OSM), PostGIS-Migration (gegen lokales PostgreSQL 16+PostGIS getestet), Solo-Modus im Browser, Pages/Release-Workflows (noch nicht auf GitHub gelaufen).
+- [offen] Öffentlicher Server (benötigt Render-/Neon-Zugang des Auftraggebers), Geo-Quests als eigener Typ, OSM-POI-Import (Overpass) in PostGIS, Gilden-Territorien, weitere Grafikpolitur.

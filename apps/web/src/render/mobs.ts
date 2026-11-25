@@ -1,5 +1,5 @@
 import { SPECIES } from '@nam/game-data';
-import { Ctx, TAU, blob, poly, glow, eye, shade, mix, alpha, lg, clamp, mkCanvas, ctx2, pr, star } from './util';
+import { Ctx, TAU, blob, poly, glow, eye, shade, mix, alpha, lg, clamp, mkCanvas, ctx2, pr, star, softShadow, litSprite, TexKind } from './util';
 
 type Shape = (c: Ctx, col: string, t: number, a: number, ph: number) => void;
 const sin = Math.sin, cos = Math.cos;
@@ -250,7 +250,10 @@ const generic: Shape = (c, col, t, a, ph) => {
 const KINDS: Record<string, Shape> = { rat, wolf, bird, boar, spider, bear, wisp, golem, drake, thug, soldier, assassin, cultist, drone, bot, turret, mech, imp, hound, fiend, demon, wraith, elemental, dragon, seraph, titan, voidheart };
 export function mobShape(c: Ctx, kind: string, col: string, t: number, attack = 0, phase = 0) { (KINDS[kind] || PETS[kind] || generic)(c, col, t, attack, phase); }
 
-let tmp: HTMLCanvasElement | null = null;
+const TEX: Record<string, [TexKind, number]> = { rat: ['fur', .8], wolf: ['fur', .9], boar: ['fur', .8], bear: ['fur', .95], hound: ['fur', .8], bird: ['fur', .6], fox: ['fur', .8], cat: ['fur', .75], owl: ['fur', .6],
+  spider: ['chitin', .8], golem: ['stone', .95], titan: ['stone', .85], bot: ['metal', .85], drone: ['metal', .85], turret: ['metal', .85], mech: ['metal', .95], soldier: ['metal', .55],
+  drake: ['scale', .95], dragon: ['scale', 1], demon: ['scale', .6], fiend: ['scale', .55], imp: ['scale', .55], thug: ['cloth', .8], assassin: ['cloth', .8], cultist: ['cloth', .8] };
+const BIGK = new Set(['dragon', 'titan', 'seraph', 'voidheart', 'demon', 'mech', 'drake', 'golem', 'bear', 'elemental']);
 export interface MobArt { kind: string; color: string; scale: number }
 export interface MobOpts { t: number; flash: number; attack: number; dead: number; facing: 1 | -1; phase?: number; target?: boolean }
 export function drawMob(ctx: Ctx, x: number, y: number, scale: number, art: MobArt, o: MobOpts) {
@@ -261,16 +264,13 @@ export function drawMob(ctx: Ctx, x: number, y: number, scale: number, art: MobA
   ctx.globalAlpha = fade;
   if (o.dead) ctx.translate(0, o.dead * 6 * sc);
   if (o.target) { ctx.strokeStyle = `rgba(255,70,70,${.6 + .3 * Math.sin(o.t / 150)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 0, 34 * sc, 9 * sc, 0, 0, TAU); ctx.stroke(); }
-  if (KINDS[art.kind] && !['bird', 'wisp', 'drone', 'wraith', 'elemental', 'seraph', 'voidheart'].includes(art.kind) || true) { ctx.fillStyle = 'rgba(0,0,0,.33)'; ctx.beginPath(); ctx.ellipse(0, 1, 28 * sc, 7 * sc, 0, 0, TAU); ctx.fill(); }
-  if (boss) { const p = .7 + .3 * Math.sin(o.t / 400); glow(ctx, 0, -40 * sc, 90 * sc, col, .4 * p); ctx.save(); ctx.translate(0, 0); for (let i = 0; i < 10; i++) { const an = o.t / 900 + i * .628, r = 36 * sc; ctx.fillStyle = alpha(shade(col, .5), .6); ctx.fillRect(Math.cos(an) * r - 1, -((o.t / 20 + i * 17) % (80 * sc)) , 2, 2); } ctx.restore(); }
+  softShadow(ctx, 30 * sc, 7.5 * sc, .42);
+  if (boss) { const p = .7 + .3 * Math.sin(o.t / 400); ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(ctx, 0, -40 * sc, 90 * sc, col, .34 * p); ctx.restore(); ctx.save(); ctx.translate(0, 0); for (let i = 0; i < 10; i++) { const an = o.t / 900 + i * .628, r = 36 * sc; ctx.fillStyle = alpha(shade(col, .5), .6); ctx.fillRect(Math.cos(an) * r - 1, -((o.t / 20 + i * 17) % (80 * sc)) , 2, 2); } ctx.restore(); }
   const lunge = Math.sin(clamp(o.attack || 0) * Math.PI) * 14 * sc * o.facing;
   ctx.translate(lunge, 0);
-  const draw = (c: Ctx, s: number) => { c.save(); c.scale(s * o.facing, s); const br = 1 + Math.sin(o.t / 300 + ph) * .012; c.scale(1, br); mobShape(c, art.kind, col, o.t, o.attack || 0, ph); c.restore(); };
-  if (o.flash > 0.02) {
-    const S = 480; if (!tmp) tmp = mkCanvas(S, S); const tc = ctx2(tmp); tc.clearRect(0, 0, S, S); const k = Math.min(1, 2.1 / Math.max(sc, .1) * .9 * 1) * 1; const ss = Math.min(sc, 2.2);
-    tc.save(); tc.translate(S / 2, S - 70); draw(tc, ss); tc.globalCompositeOperation = 'source-atop'; tc.fillStyle = `rgba(255,255,255,${(.8 * o.flash).toFixed(3)})`; tc.fillRect(-S, -S, S * 2, S * 2); tc.restore(); void k;
-    const r = sc / ss; ctx.drawImage(tmp, -S / 2 * r, -(S - 70) * r, S * r, S * r);
-  } else draw(ctx, sc);
+  const big = BIGK.has(art.kind), tx = TEX[art.kind];
+  litSprite(ctx, sc, big ? -140 : -80, big ? -200 : -120, big ? 140 : 80, 26, c => { c.scale(o.facing, 1); const br = 1 + Math.sin(o.t / 300 + ph) * .012; c.scale(1, br); mobShape(c, art.kind, col, o.t, o.attack || 0, ph); },
+    { tex: tx?.[0], texA: tx ? tx[1] * .8 : 0, rim: .9, ao: .32, flash: o.flash });
   ctx.restore();
 }
 export function drawMobIconBase(ctx: Ctx, x: number, y: number, sc: number, art: MobArt, t = 0) { ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); mobShape(ctx, art.kind, art.color, t, 0, 0); ctx.restore(); }
@@ -317,18 +317,20 @@ export function drawPet(ctx: Ctx, x: number, y: number, scale: number, species: 
   const art = SPECIES[species]?.art || species, col = color || SPECIES[species]?.color || '#aaa';
   const st = clamp(stage ?? 0, 0, 2), k = [.5, .62, .78][st] * scale * (art === 'golem' || art === 'drake' || art === 'wolf' || art === 'boar' ? .8 : 1);
   ctx.save(); ctx.translate(x, y);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 1, 18 * k * 1.4, 5 * k * 1.4, 0, 0, TAU); ctx.fill();
-  if (st === 2) { glow(ctx, 0, -26 * k * 1.5, 46 * k * 1.5, col, .35 + .1 * Math.sin(t / 300)); }
-  ctx.scale(k * 1.5, k * 1.5); const sh = PETS[art] || generic; sh(ctx, col, t, 0, 0);
-  if (st >= 1) { ctx.fillStyle = '#ffe27a'; for (let i = 0; i < st * 2; i++) { const an = t / 700 + i * 2; star(ctx, Math.cos(an) * 26, -34 + Math.sin(an) * 8 - i * 4, 2.6, 4); ctx.fill(); } }
+  softShadow(ctx, 18 * k * 1.5, 5 * k * 1.5, .4);
+  if (st === 2) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(ctx, 0, -26 * k * 1.5, 46 * k * 1.5, col, .3 + .1 * Math.sin(t / 300)); ctx.restore(); }
+  const sh = PETS[art] || generic, tx = TEX[art];
+  litSprite(ctx, k * 1.5, -75, -105, 75, 20, c => sh(c, col, t, 0, 0), { tex: tx?.[0], texA: tx ? tx[1] * .7 : 0, rim: .8, ao: .28 });
+  ctx.scale(k * 1.5, k * 1.5);
+  if (st >= 1) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = '#ffe27a'; for (let i = 0; i < st * 2; i++) { const an = t / 700 + i * 2; glow(ctx, Math.cos(an) * 26, -34 + Math.sin(an) * 8 - i * 4, 6, '#ffe27a', .5); star(ctx, Math.cos(an) * 26, -34 + Math.sin(an) * 8 - i * 4, 2.6, 4); ctx.fill(); } ctx.restore(); }
   ctx.restore();
 }
 /* ---------- Summons ---------- */
 export function drawSummon(ctx: Ctx, x: number, y: number, scale: number, kind: string, color: string, t: number, attack: number) {
   const col = color || '#9a4dff', map: Record<string, [string, number]> = { wolf: ['wolf', .95], phoenix: ['phoenix', 1.7], golem: ['golem', .85], drake: ['drake', 1.1], titan: ['titan', .8] }, [sh, k] = map[kind] || ['wisp', 1];
-  ctx.save(); ctx.translate(x, y); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(0, 1, 30 * scale, 7 * scale, 0, 0, TAU); ctx.fill();
+  ctx.save(); ctx.translate(x, y); softShadow(ctx, 32 * scale, 7.5 * scale, .3);
   ctx.strokeStyle = alpha(col, .7); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 1, 34 * scale, 8 * scale, 0, 0, TAU); ctx.stroke();
-  glow(ctx, 0, -34 * scale * k, 56 * scale * k, col, .4);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(ctx, 0, -34 * scale * k, 56 * scale * k, col, .38); ctx.restore();
   ctx.translate(Math.sin(clamp(attack) * Math.PI) * 16 * scale, 0); ctx.scale(scale * k, scale * k); ctx.globalAlpha = .88;
   ctx.globalCompositeOperation = 'source-over'; const base = mix(col, '#ffffff', .15); mobShape(ctx, sh, base, t, attack, 0);
   ctx.globalAlpha = .25; ctx.globalCompositeOperation = 'lighter'; mobShape(ctx, sh, col, t + 80, attack, 0); ctx.restore();

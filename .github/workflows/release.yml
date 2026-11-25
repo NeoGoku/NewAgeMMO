@@ -1,0 +1,43 @@
+name: Release (APK + PWA)
+on:
+  push: { tags: ['v*'] }
+  workflow_dispatch: {}
+permissions: { contents: write }
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v3
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - name: Web-Build (APK, relative Pfade)
+        run: npm run build -w @nam/web
+        env: { VITE_DEFAULT_SERVER: '${{ vars.NAM_SERVER_URL }}' }
+      - name: Android-Projekt erzeugen und Debug-APK bauen
+        working-directory: apps/android
+        run: |
+          npm install --no-audit --no-fund
+          npx cap add android
+          npx cap sync android
+          cd android && ./gradlew assembleDebug --no-daemon
+      - name: Artefakte benennen
+        run: |
+          V="${GITHUB_REF_NAME:-dev}"
+          mkdir -p out && cp apps/android/android/app/build/outputs/apk/debug/app-debug.apk "out/NewAgeMMO-${V}.apk"
+          (cd apps/web/dist && zip -qr "../../../out/NewAgeMMO-web-${V}.zip" .)
+      - uses: actions/upload-artifact@v4
+        with: { name: release-files, path: out/* }
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          body: |
+            **Download:** `NewAgeMMO-*.apk` (Android, Debug-signiert – „Unbekannte Apps“ erlauben). Browser/Windows-PWA: siehe README.

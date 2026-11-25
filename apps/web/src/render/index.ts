@@ -1,3 +1,4 @@
+export { setLighting, getLighting } from "./util";
 export { drawBackground } from './background';
 export { drawWeather } from './weather';
 export { drawCharacter } from './character';

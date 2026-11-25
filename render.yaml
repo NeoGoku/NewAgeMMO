@@ -1,0 +1,11 @@
+# Render Blueprint (kostenloser Web-Service). Persistenz: kostenlose PostgreSQL-Datenbank (z. B. Neon, PostGIS verfügbar) als DATABASE_URL.
+services:
+  - type: web
+    name: newagemmo-server
+    runtime: docker
+    dockerfilePath: infrastructure/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - { key: DATABASE_URL, sync: false }
+      - { key: ADMIN_USERS, sync: false }
