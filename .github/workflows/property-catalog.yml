@@ -6,21 +6,42 @@ on:
     paths:
       - .github/workflows/property-catalog.yml
       - scripts/import-osm-properties.ts
-permissions: { contents: read }
+permissions: { contents: write }
+concurrency: { group: braunschweig-property-catalog, cancel-in-progress: false }
 jobs:
   import:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci --no-audit --no-fund
       - name: Wohngebäude aus Overpass importieren
+        id: overpass
+        continue-on-error: true
         run: |
           npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson" ||
             OSM_OVERPASS_URL=https://overpass.private.coffee/api/interpreter \
+            npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson"
+      - name: OSM-Regionalextrakt von Geofabrik importieren
+        if: steps.overpass.outcome != 'success'
+        shell: bash
+        run: |
+          trap 'echo "::error::Geofabrik-Import fehlgeschlagen (Zeile $LINENO)."' ERR
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends osmium-tool
+          curl --fail --location --retry 1 --retry-max-time 220 --connect-timeout 15 --max-time 200 \
+            https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf \
+            --output "$RUNNER_TEMP/niedersachsen.osm.pbf"
+          snapshot="$(osmium fileinfo -g header.option.osmosis_replication_timestamp "$RUNNER_TEMP/niedersachsen.osm.pbf")"
+          osmium extract --strategy=complete_ways --bbox=10.455,52.22,10.57,52.297 \
+            --output="$RUNNER_TEMP/braunschweig.osm.pbf" "$RUNNER_TEMP/niedersachsen.osm.pbf"
+          buildings="$(npx --no-install tsx --eval "import { RESIDENTIAL_BUILDINGS } from '@nam/shared'; console.log(RESIDENTIAL_BUILDINGS.join(','))")"
+          osmium tags-filter --output="$RUNNER_TEMP/residential.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" "w/building=$buildings"
+          osmium export --geometry-types=polygon --attributes=type,id --output-format=geojson \
+            --output="$RUNNER_TEMP/residential.geojson" "$RUNNER_TEMP/residential.osm.pbf"
+          OSM_EXTRACT_GEOJSON="$RUNNER_TEMP/residential.geojson" OSM_EXTRACT_SNAPSHOT="$snapshot" \
             npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson"
       - uses: actions/upload-artifact@v4
         with:
@@ -28,3 +49,22 @@ jobs:
           path: ${{ runner.temp }}/braunschweig.geojson
           if-no-files-found: error
           retention-days: 30
+      - name: Verifizierten Katalog als Git-Snapshot bereitstellen
+        env:
+          OSM_SNAPSHOT_BRANCH: osm-braunschweig-snapshot
+        run: |
+          target="refs/heads/$OSM_SNAPSHOT_BRANCH"
+          existing="$(git ls-remote --heads origin "$target")"
+          if [[ -n "$existing" ]]; then
+            git fetch --depth=1 --no-tags origin "$target"
+            git switch --detach FETCH_HEAD
+          else
+            git switch --orphan "$OSM_SNAPSHOT_BRANCH"
+          fi
+          cp "$RUNNER_TEMP/braunschweig.geojson" braunschweig.geojson
+          git add -- braunschweig.geojson
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Import verified Braunschweig OpenStreetMap catalog"
+            git push origin "HEAD:$target"
+          fi
