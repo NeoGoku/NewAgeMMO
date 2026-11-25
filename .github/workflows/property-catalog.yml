@@ -1,0 +1,30 @@
+name: OSM-Immobilienkatalog Braunschweig
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/property-catalog.yml
+      - scripts/import-osm-properties.ts
+permissions: { contents: read }
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - name: Wohngebäude aus Overpass importieren
+        run: |
+          npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson" ||
+            OSM_OVERPASS_URL=https://overpass.private.coffee/api/interpreter \
+            npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: braunschweig-property-catalog
+          path: ${{ runner.temp }}/braunschweig.geojson
+          if-no-files-found: error
+          retention-days: 30
