@@ -26,3 +26,16 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Admin-Oberfläche | ✖ nur Server-Befehle (`admin`), keine UI |
 | Lasttest 50–100 Spieler | ✖ nicht gemessen |
 | Physische Android-Abnahme | ✖ offen |
+
+## v2-Ergänzung
+| Bereich | Status |
+|---|---|
+| Reale Erde: MapLibre + OSM-Kacheln, GPS/virtuelle Bewegung, Einwilligungsdialog | ✔ im Browser geprüft (Solo, Playwright) |
+| Dynamische Spawns (Zelle × 20-Min-Bucket, Stufe nach Entfernung zu Städten), Ressourcen, Dungeoneingänge, Quellen, Weltboss-Spawns | ✔ Server-Test; Interaktion/Kampfübergang ◐ |
+| Reale Verankerung der 18 Spielorte (Entdeckung + Visit-Quests per Radius), Häuser mit gerundeter Geo-Position | ◐ |
+| GPS-Manipulationsschutz (Speed/Teleport/Genauigkeit, Sperre), Datenschutz (Opt-in, 100 m Rundung, Löschfunktion) | ✔ Server-Test |
+| PostgreSQL + PostGIS (Migrationen 001–003) | ✔ Integrationstest gegen lokales PostgreSQL 16 + PostGIS 3 |
+| Solo-Modus (gesamter Server im Web Worker, IndexedDB) | ✔ im Browser geprüft |
+| Grafik semi-realistisch (Licht, Texturen, Rim-Light, Effekte, Icons) | ◐ Screenshots geprüft; Performance auf Handy ungemessen |
+| GitHub Pages / Release (APK) Workflows | ◐ siehe README/Deployment; Laufstatus siehe Actions |
+| Öffentlicher Multiplayer-Server | ✖ benötigt externe Konten (Render/Neon) |
