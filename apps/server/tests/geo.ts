@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'; import WebSocket from 'ws'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
-import { haversine, GEO } from '@nam/shared';
+import { haversine, GEO, type Character } from '@nam/shared';
 import { createServer } from 'node:http';
+import { makeStore } from '../src/store-node';
 const PORT = 8700 + Math.floor(Math.random() * 200); const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nam-'));
 const requestsToRouter: any[] = [];
 const router = createServer(async (req, res) => {
@@ -96,7 +97,10 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(!route && !geo.me.travel, 'Routenvorschau startet keine Bewegung');
   r = await req('geoRouteStart', { ...destination, previewId: preview?.id });
   ok(r.t === 'ok' && route?.id && requestsToRouter.length === 1, 'Reisestart nutzt die passende Vorschau');
-  const savedTrip = JSON.parse(fs.readFileSync(path.join(dir, 'chars.json'), 'utf8'))[c.id].geo?.trip;
+  process.env.DATA_DIR = dir;
+  const persisted = makeStore();
+  await persisted.init();
+  const savedTrip = (await persisted.get<Character>('chars', c.id))?.geo?.trip;
   ok(savedTrip?.id === route?.id && savedTrip?.points.length === 3 && savedTrip?.startedAt > 0, 'Reisestart speichert Geometrie und Serverzeit dauerhaft');
   await sleep(700);
   const beforeLogout = motion?.travel?.remainingM;
