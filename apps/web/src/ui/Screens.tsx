@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CLASS_IDS, CLASS_BASE, ATTRS, ATTR_NAMES, NAME_RE, type ClassId, type Look } from '@nam/shared'; import { CLASSES } from '@nam/game-data';
 import { drawBackground, drawCharacter, portraitUrl, drawWeather } from '../render'; import { audio } from '../audio';
+import { UpdatePanel } from './UpdatePanel';
 import { state, set, useS, loadToken, saveSettings, saveToken } from '../store';
 import { isSoloServer, net } from '../net';
 import { exportSoloBackup, importSoloBackup } from '../solo/idbstore';
@@ -191,6 +192,7 @@ export function OptionsBody({ ingame }: { ingame?: boolean }) {
     {!ingame && <div><div className="dim sm">Spielmodus</div><div className="row wrap"><button className={`btn sm${isSoloServer(s.server) ? ' on' : ''}`} onClick={() => up({ server: 'solo:' })}>Solo (lokal, offline)</button><button className={`btn sm${isSoloServer(s.server) ? '' : ' on'}`} onClick={() => up({ server: ONLINE_DEFAULT })}>Online (Multiplayer)</button></div><div className="dim xs">Solo: dein Spielstand liegt lokal im Browser (IndexedDB), kein Server nötig. Online: gemeinsame Welt mit anderen Spielern.</div><div className="dim sm">Serveradresse (WebSocket)</div><input type="text" value={s.server} onChange={e => up({ server: e.target.value.trim() })} placeholder="wss://dein-server.example" /></div>}
     {!ingame && isSoloServer(s.server) && <SoloBackupOptions />}
     <button className="btn sm" onClick={() => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch { /* */ } }}>⛶ Vollbild</button>
+    <div className="hr" /><UpdatePanel />
     <div className="dim xs">Steuerung: Tippen/Klicken auf Boden = laufen · auf Gegner = angreifen · Skills 1–6 / Tasten 1–6 · Leertaste = Auto-Angriff · I Inventar, C Charakter, M Karte, Q Quests, Enter Chat.</div></div>;
 }
 export function OptionsScreen() { return <div className="app" style={{ background: 'radial-gradient(circle at 50% 30%,#16254a,#080c1a)' }}><div className="title"><div className="card col" style={{ width: 'min(440px,94vw)', background: 'var(--panel)', textAlign: 'left', maxHeight: '92vh', overflow: 'auto' }}><div className="b" style={{ fontSize: 20 }}>⚙ Optionen</div><OptionsBody /><button className="btn pri" onClick={() => { saveSettings(); set({ screen: 'title' }); }}>Fertig</button></div></div></div>; }

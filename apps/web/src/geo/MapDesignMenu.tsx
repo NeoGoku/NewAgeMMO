@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
-import { MAP_STYLES, MAP_TYPES, mapThemePreview, type MapKind, type MapPreferences, type MapTheme } from './map-style';
+import { MAP_STYLES, MAP_TYPES, mapThemePreview, mapWorldPreview, type MapKind, type MapPreferences, type MapTheme } from './map-style';
 
-const previews = new Map(MAP_STYLES.map(style => [style.id, mapThemePreview(style.id)]));
+const previews = new Map(MAP_STYLES.map(style => [style.id, [mapThemePreview(style.id), mapWorldPreview(style.id)] as const]));
 
 export function MapDesignMenu({ value, onType, onStyle, onClose, children }: {
   value: MapPreferences;
@@ -23,11 +23,11 @@ export function MapDesignMenu({ value, onType, onStyle, onClose, children }: {
       </div> : <>
         <div className="map-previews">
           {MAP_STYLES.map(style => <button key={style.id} type="button" aria-pressed={value.style === style.id} className={value.style === style.id ? 'on' : ''} onClick={() => onStyle(style.id)}>
-            <img src={previews.get(style.id)} alt="" width={180} height={85} loading="lazy" />
+            <span className="preview"><img src={previews.get(style.id)![0]} alt="" width={180} height={85} loading="lazy" /><img className="world" src={previews.get(style.id)![1]} alt="" width={40} height={40} loading="lazy" /></span>
             <span>{style.label}</span>
           </button>)}
         </div>
-        <small>Kartenausschnitt Monaco · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap-Mitwirkende</a></small>
+        <small>Vorschau: echte Karte, Braunschweig Innenstadt und Weltübersicht · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap-Mitwirkende</a> · © OpenMapTiles</small>
         {value.style && <button type="button" className="reset-theme" onClick={() => onStyle(null)}>Basisfarben verwenden</button>}
       </>}
     </div>

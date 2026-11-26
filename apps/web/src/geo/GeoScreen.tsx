@@ -8,7 +8,7 @@ import { mobIconUrl, portraitUrl } from '../render';
 import { RoutePlanner, TravelStatus, type RouteLine, type RouteTarget } from './RoutePlanner';
 import { MapDesignMenu } from './MapDesignMenu';
 import { Joystick } from './Joystick';
-import { applyMapPreferences, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
+import { applyMapPreferences, dopCovers, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
 import { distanceLabel, pinLabels, questPins, type QuestPinRole } from './quest-map';
 import { clusterMarkers, drawMarkerIcon, MARKER_CATEGORIES, markerCategories, PROPERTY_MARKER_STATUSES, propertyMarkerStatus, propertyMarkerType, type MarkerCategory } from './map-markers';
 import { geoBus } from './bus';
@@ -59,6 +59,8 @@ const CSS = `
 .geo .map-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .geo .map-previews button{display:grid;gap:4px;padding:4px;min-width:0;min-height:0;font-size:11px}
 .geo .map-previews img{display:block;width:100%;height:auto;border-radius:6px}
+.geo .map-previews .preview{position:relative;display:block}
+.geo .map-previews img.world{position:absolute;right:4px;bottom:4px;width:34%;aspect-ratio:1;object-fit:cover;border:1px solid #fff8;border-radius:50%}
 .geo .settings .reset-theme{margin-top:6px;min-height:32px}
 .geo .settings details label{margin-top:8px}
 .geo .route-panel{position:absolute;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 55px + var(--sab));width:min(358px,calc(100% - 20px));max-height:48%;overflow:auto;display:grid;gap:7px;padding:10px 12px;border:1px solid #52d2e6;border-radius:12px;background:#061824f7;box-shadow:0 8px 32px #0009}
@@ -156,6 +158,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const [clusterSelection, setClusterSelection] = useState<MarkerTarget[]>([]);
   blockedRef.current ||= mapSettings || markerLegend;
   const [mapError, setMapError] = useState('');
+  const [imageryNote, setImageryNote] = useState(false);
   const [questTrack, setQuestTrack] = useState<{ id: string; role: QuestPinRole; navigate: boolean } | null>(null);
   const questStates = useS(s => s.char?.quests);
   const conn = useS(s => s.conn);
@@ -228,15 +231,18 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       redraw.current();
     });
     map.on('error', event => {
-      if ('sourceId' in event && event.sourceId === 'satellite') {
-        setMapError('Satellitendetails teilweise nicht verfügbar.');
+      if ('sourceId' in event && (event.sourceId === 'satellite' || event.sourceId === 'satellite-dop')) {
+        setMapError('Luftbilddetails teilweise nicht verfügbar.');
       } else if (preferencesRef.current.kind !== 'satellite') {
         setMapError('Kartendaten teilweise nicht verfügbar.');
       }
     });
-    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
+    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'satellite-dop', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
     map.on('moveend', () => {
       redrawMarkers.current();
+      // Satellit ohne zulässige Detailquelle: Hinweis statt stillschweigend unscharfer Bilder
+      const c = map.getCenter();
+      setImageryNote(preferencesRef.current.kind === 'satellite' && map.getZoom() > 14 && !dopCovers(c.lng, c.lat));
       if (!centered.current) return;
       const current = preferencesRef.current;
       const values = { ...current, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
@@ -252,7 +258,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       setSelPlayer(null);
       setClusterSelection([]);
       if (modeRef.current !== 'virtual' || !meRef.current) return;
-      const features = map.queryRenderedFeatures(e.point, { layers: ['theme-poi', 'theme-street-label', 'theme-label'].filter(id => map.getLayer(id)) });
+      const features = map.queryRenderedFeatures(e.point, { layers: ['theme-poi', 'theme-poi-minor', 'theme-street-label', 'theme-label', 'theme-label-state', 'theme-label-country'].filter(id => map.getLayer(id)) });
       const displayName = (props: Record<string, unknown> | undefined) => {
         const value = props?.['name:de'] ?? props?.name_de ?? props?.name;
         return typeof value === 'string' && value.trim() ? value.trim().slice(0, 96) : undefined;
@@ -676,6 +682,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
           {mapError && <div>{mapError}</div>}
+          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen) – Straßenkarte als Ersatz.</div>}
           {!info.hasMe && <div>Warte auf Position…</div>}
         </div>
 

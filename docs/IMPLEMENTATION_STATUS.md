@@ -82,3 +82,15 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Teleportportale und virtuelle Reisezeit | ✔ Geo-Integrationstest und Web-Build |
 | Eroberbare Gebiete | ✔ Kolosseum und Moorwacht |
 | Ereignisleiste, Kampfskills nur im Kampf, Chat eingeklappt | ✔ |
+
+## Kartenstyles (sechs eigenständige Designsysteme)
+- [implementiert] Underground, Metro Noir, West Coast, Frontier, Pixel Adventure, Neon District als eigene Layersätze mit gemeinsamem Layer-Vertrag (`apps/web/src/geo/styles/kit.ts`): eigene Straßenhierarchie, Gebäudedarstellung, Schienen, Grenzen, Muster/Texturen, Schriften, POI-Sprites, 3D-Gebäudematerialien und Satelliten-Overlay (nur Straßen/Grenzen/Labels über echten Bildern).
+- [implementiert] Alte Style-IDs werden migriert (urban→metro-noir, vintage→frontier, adventure→west-coast, cyber/night-city→neon-district, pixel→pixel-adventure). Gameplay-Layer bleiben beim Wechsel unverändert oben; Kamera/Zoom bleiben erhalten (Browser-Test mit echter Karte, Mobilviewport).
+- [bewusst nicht] Höhenlinien: OpenFreeMap liefert keine Höhendaten; Frontier zeigt keine erfundenen Konturen, nur Gipfelzeichen mit `ele` aus den Kacheln.
+- [offen] Globus-Projektion (MapLibre 4.x ohne Globe; stattdessen gestaltete Mercator-Weltübersicht), Test auf echtem iOS-Safari/Android-Gerät, Sprite-Politur.
+
+## Update-System, Geschwindigkeit, Luftbilder, Vermietung
+- [implementiert/geprüft] Web-Update: Build-ID (Commit) + `version.json` pro Build, Prüfung bei Start/Vordergrund/pageshow/online/alle 5 Min., kontrollierter Reload mit Schleifenschutz (max. 3 Versuche, Backoff), Vormerken bei Szene/Handel/Reise/Dialog, Anzeige in den Optionen. Browser-Test (Chromium/Playwright, **keine echte iPhone-Abnahme**): neue Build-ID → Reloads begrenzt, localStorage bleibt, Offline-Start funktioniert. Details: `docs/UPDATE_SYSTEM.md`.
+- [implementiert/geprüft] Gespeicherte Wege: Geschwindigkeit wird beim Laden aus dem Fortbewegungsprofil abgeleitet (Gehen 5 km/h); Servertest.
+- [implementiert/geprüft] Satellit: LGLN DOP20 (20 cm) in Niedersachsen; Test Braunschweig-Weststadt z18 (40 Detailkacheln HTTP 200). Außerhalb: Straßenkarte mit Hinweis.
+- [implementiert/geprüft] Vermietung: Wochenmiete (5 % des Kaufpreises, min. 100 Gold), Verlängerung bis 4 Wochen, Beenden ohne Erstattung, Ablauf nur bei leerer Immobilie; Solo und Online über denselben Servercode; Servertest.

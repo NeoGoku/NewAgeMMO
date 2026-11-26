@@ -9,7 +9,7 @@ import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 import { anchorList, geoObjects } from './geo-world';
 import { loadOsmPoints } from './geo-osm';
-import { geoDistance, isTravelMode, planRoute, routeLength, travelModes, tripDistance, tripPosition, validCoord, validTrip } from './geo-routing';
+import { geoDistance, isTravelMode, normalizeTripSpeed, planRoute, routeLength, travelModes, tripDistance, tripPosition, validCoord, validTrip } from './geo-routing';
 
 const S = (v: unknown) => typeof v === 'string' ? v.slice(0, 80) : '';
 const NUM = (v: unknown, a: number, b: number) => typeof v === 'number' && Number.isFinite(v) && v >= a && v <= b ? v : null;
@@ -37,7 +37,7 @@ function gs(p: Player): GeoState {
   if (saved?.trip && !validTrip(saved.trip)) {
     delete saved.trip;
     p.dirty = true;
-  }
+  } else if (saved?.trip && normalizeTripSpeed(saved.trip, p.c.equipment.mount?.id, now())) p.dirty = true;
   const hasSavedPosition = saved && (saved.positionSet || saved.qlat !== 0 || saved.qlon !== 0);
   return p.geo = {
     on: false, gps: false, visible: saved?.visible ?? true,
@@ -479,7 +479,7 @@ export function pushGeo(p: Player) {
   for (const item of objs) {
     if (item.def !== 'property') continue;
     const claimant = claims.get(item.id);
-    item.extra.marketStatus = claimant === p.id ? 'own' : claimant ? 'owned' : 'sale';
+    item.extra.marketStatus = claimant === p.id ? (p.c.geoProperty?.rentUntil ? 'rent' : 'own') : claimant ? 'owned' : 'sale';
   }
   send(p, { t: 'geo', me: position, objs, players, rev: t });
 }

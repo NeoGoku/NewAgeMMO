@@ -153,6 +153,29 @@ try {
   assert.equal(a.active.c.gold, 10000 - offer.buyGold + sale.gold);
   assert.equal((await store.get('chars', a.active.id)).geoProperty, undefined);
   assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'err', 'the same property cannot be sold twice');
+  {
+    // Geografische Vermietung: Wochenmiete serverseitig, Beenden ohne Erstattung, Ablauf nur bei leerer Immobilie
+    const gold = a.active.c.gold;
+    const listed = (await a.socket.req('geoPropertyList', { id })).list[0];
+    assert.ok(listed.rentGold > 0 && listed.rentGold < listed.buyGold, 'Mietpreis kommt vom Server');
+    assert.equal((await a.socket.req('geoPropertyRent', { id, rentGold: 1 })).t, 'ok');
+    assert.equal(a.active.c.gold, gold - listed.rentGold, 'Client-Preis wird ignoriert');
+    assert.ok(a.active.c.geoProperty!.rentUntil! > Date.now(), 'Mietvertrag hat Ablaufzeit');
+    assert.equal((await store.get('chars', a.active.id)).geoProperty.rentUntil, a.active.c.geoProperty!.rentUntil, 'Mietvertrag ist gespeichert');
+    assert.equal((await b.socket.req('geoPropertyRent', { id })).t, 'err', 'vermietete Immobilie ist vergeben');
+    assert.equal((await a.socket.req('geoPropertyRenew', { id })).t, 'ok');
+    assert.equal((await a.socket.req('geoPropertyRenew', { id })).t, 'ok');
+    assert.equal((await a.socket.req('geoPropertyRenew', { id })).t, 'ok');
+    assert.equal((await a.socket.req('geoPropertyRenew', { id })).t, 'err', 'höchstens vier Wochen im Voraus');
+    a.active.c.geoProperty!.rentUntil = Date.now() - 1000;
+    const expired = await a.socket.req('geoPropertyList', { id });
+    assert.equal(a.active.c.geoProperty, undefined, 'abgelaufene, leere Miete wird freigegeben');
+    assert.equal(expired.t, 'ok');
+    assert.equal((await a.socket.req('geoPropertyRent', { id })).t, 'ok');
+    const before = a.active.c.gold;
+    assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'ok');
+    assert.equal(a.active.c.gold, before, 'Mietvertrag endet ohne Erstattung');
+  }
   assert.equal((await b.socket.req('geoPropertyBuy', { id })).t, 'ok', 'sold property becomes available again');
   const plotId = 'property:osm:way:1235';
   const plot = (await a.socket.req('geoPropertyList', { id: plotId })).list[0];

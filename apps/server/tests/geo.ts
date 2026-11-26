@@ -182,7 +182,16 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(r.t === 'err' && geo.pending, 'GPS-Wechsel nach Wiederanmeldung umgeht den Teleportschutz nicht');
   r = await req('geoPos', braunschweig);
   ok(r.t === 'ok' && geo.me?.lon === braunschweig.lon, 'GPS akzeptiert aktuellen Fix nach Wiederanmeldung');
-  const { configureRouting, planRoute, routeLength } = await import('../src/geo-routing');
+  const { configureRouting, planRoute, routeLength, normalizeTripSpeed } = await import('../src/geo-routing');
+  {
+    // Gespeicherte Altwerte (z. B. 50 km/h = 13,9 m/s beim Gehen) werden aus dem Profil neu abgeleitet
+    const trip: any = { id: 'x', mode: 'walk', target: queryPoint, speedMps: 50 / 3.6, progressM: 10, startedAt: 1000, points: [queryPoint, { ...queryPoint, lon: queryPoint.lon + .01 }] };
+    ok(normalizeTripSpeed(trip, undefined, 11000) && trip.speedMps === 5 / 3.6 && Math.abs(trip.progressM - 10 - 10 * 50 / 3.6) < 1e-6 && trip.startedAt === 11000, 'Gespeicherter Gehweg mit 50 km/h wird auf 5 km/h migriert, Fortschritt bleibt');
+    const mounted: any = { ...trip, mode: 'mount', speedMps: 1 };
+    ok(normalizeTripSpeed(mounted, 'mount_horse', 11000) && mounted.speedMps === 30 / 3.6, 'Reittier-Profil bleibt erhalten');
+    const caro: any = { ...trip, mode: 'car', speedMps: 12 };
+    ok(!normalizeTripSpeed(caro, undefined, 11000) && caro.speedMps === 12, 'Langsamere Routenzeit bei Auto bleibt');
+  }
   configureRouting(`http://127.0.0.1:${routerAddress.port}`);
   const car = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + .003 }, 'car');
   ok(typeof car !== 'string' && Math.abs(routeLength(car.points) / car.speedMps - 70) < 1e-9 &&

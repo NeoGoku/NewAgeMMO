@@ -164,6 +164,21 @@ export function validTrip(trip: SavedGeoTrip) {
     Array.isArray(trip.points) && trip.points.length >= 2 && trip.points.length <= MAX_POINTS && trip.points.every(validCoord);
 }
 
+/**
+ * Geschwindigkeit eines gespeicherten Wegs aus dem gültigen Fortbewegungsprofil ableiten.
+ * Ältere Spielstände enthalten frühere Standardwerte (z. B. Gehen 2,5 m/s); sie werden auf das aktuelle Profil gesetzt.
+ * Motorrad/Auto behalten eine langsamere routenbedingte Geschwindigkeit. Die bisher zurückgelegte Strecke bleibt erhalten.
+ */
+export function normalizeTripSpeed(trip: SavedGeoTrip, mount: string | undefined, time: number) {
+  const limit = geoTravelSpeed(trip.mode, mount);
+  const wanted = trip.mode === 'motorbike' || trip.mode === 'car' ? Math.min(trip.speedMps, limit) : limit;
+  if (Math.abs(trip.speedMps - wanted) < 1e-9) return false;
+  trip.progressM = tripDistance(trip, time);
+  if (trip.startedAt !== null) trip.startedAt = time;
+  trip.speedMps = wanted;
+  return true;
+}
+
 export function tripDistance(trip: SavedGeoTrip, time: number) {
   const elapsedS = trip.startedAt === null ? 0 : Math.max(0, time - trip.startedAt) / 1000;
   return Math.min(routeLength(trip.points), trip.progressM + elapsedS * trip.speedMps);
