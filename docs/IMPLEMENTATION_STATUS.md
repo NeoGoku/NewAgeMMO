@@ -82,3 +82,9 @@ Legende: ✔ implementiert/geprüft · ◐ implementiert/ungeprüft · ◔ teilw
 | Teleportportale und virtuelle Reisezeit | ✔ Geo-Integrationstest und Web-Build |
 | Eroberbare Gebiete | ✔ Kolosseum und Moorwacht |
 | Ereignisleiste, Kampfskills nur im Kampf, Chat eingeklappt | ✔ |
+
+## Kartenstyles (sechs eigenständige Designsysteme)
+- [implementiert] Underground, Metro Noir, West Coast, Frontier, Pixel Adventure, Neon District als eigene Layersätze mit gemeinsamem Layer-Vertrag (`apps/web/src/geo/styles/kit.ts`): eigene Straßenhierarchie, Gebäudedarstellung, Schienen, Grenzen, Muster/Texturen, Schriften, POI-Sprites, 3D-Gebäudematerialien und Satelliten-Overlay (nur Straßen/Grenzen/Labels über echten Bildern).
+- [implementiert] Alte Style-IDs werden migriert (urban→metro-noir, vintage→frontier, adventure→west-coast, cyber/night-city→neon-district, pixel→pixel-adventure). Gameplay-Layer bleiben beim Wechsel unverändert oben; Kamera/Zoom bleiben erhalten (Browser-Test mit echter Karte, Mobilviewport).
+- [bewusst nicht] Höhenlinien: OpenFreeMap liefert keine Höhendaten; Frontier zeigt keine erfundenen Konturen, nur Gipfelzeichen mit `ele` aus den Kacheln.
+- [offen] Globus-Projektion (MapLibre 4.x ohne Globe; stattdessen gestaltete Mercator-Weltübersicht), Test auf echtem iOS-Safari/Android-Gerät, Sprite-Politur.

@@ -30,3 +30,4 @@
 ## Map-First (aktuell)
 - [implementiert/geprüft] Karte als Hauptansicht, Ereignisleiste (5 Bereiche + Mehr), kompakte Charakteranzeige, eingeklappter Chat, Kampfskills nur im Kampf, Szenenwechsel per Server-Nachricht, NPCs/Werkstätten als Kartenobjekte mit Nähe-Interaktion.
 - [offen] Weitere geografische Gilden- und Housing-Objekte, eigenständige Dungeon-Karten, Erprobung auf echtem Android-Gerät.
+- [implementiert/geprüft] Kartenstyles: sechs eigenständige Styles, Vorschaubilder aus echter Karte (`docs/map-styles/`), Migration alter IDs. Offen: Geräteabnahme iOS/Android.

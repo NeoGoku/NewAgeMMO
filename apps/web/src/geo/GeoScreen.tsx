@@ -59,6 +59,8 @@ const CSS = `
 .geo .map-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .geo .map-previews button{display:grid;gap:4px;padding:4px;min-width:0;min-height:0;font-size:11px}
 .geo .map-previews img{display:block;width:100%;height:auto;border-radius:6px}
+.geo .map-previews .preview{position:relative;display:block}
+.geo .map-previews img.world{position:absolute;right:4px;bottom:4px;width:34%;aspect-ratio:1;object-fit:cover;border:1px solid #fff8;border-radius:50%}
 .geo .settings .reset-theme{margin-top:6px;min-height:32px}
 .geo .settings details label{margin-top:8px}
 .geo .route-panel{position:absolute;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 55px + var(--sab));width:min(358px,calc(100% - 20px));max-height:48%;overflow:auto;display:grid;gap:7px;padding:10px 12px;border:1px solid #52d2e6;border-radius:12px;background:#061824f7;box-shadow:0 8px 32px #0009}
@@ -252,7 +254,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       setSelPlayer(null);
       setClusterSelection([]);
       if (modeRef.current !== 'virtual' || !meRef.current) return;
-      const features = map.queryRenderedFeatures(e.point, { layers: ['theme-poi', 'theme-street-label', 'theme-label'].filter(id => map.getLayer(id)) });
+      const features = map.queryRenderedFeatures(e.point, { layers: ['theme-poi', 'theme-poi-minor', 'theme-street-label', 'theme-label', 'theme-label-state', 'theme-label-country'].filter(id => map.getLayer(id)) });
       const displayName = (props: Record<string, unknown> | undefined) => {
         const value = props?.['name:de'] ?? props?.name_de ?? props?.name;
         return typeof value === 'string' && value.trim() ? value.trim().slice(0, 96) : undefined;
