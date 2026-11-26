@@ -16,11 +16,16 @@ const slices = {
 } as const;
 const districtLimit = 330;
 const minimumDistrictBuildings = 25;
+const additions = {
+  Nordstadt: [52.277, 10.510, 52.294, 10.535],
+  Bebelhof: [52.243, 10.532, 52.254, 10.552],
+} as const;
+const plotLimit = 45;
 
 type ImportFeature = {
   type: 'Feature';
   id: string;
-  properties: { building?: string; 'building:levels'?: string };
+  properties: { building?: string; 'building:levels'?: string; landuse?: 'greenfield' };
   geometry: unknown;
 };
 
@@ -91,12 +96,18 @@ async function readGeofabrik(filename: string) {
       properties: { building: typeof building === 'string' ? building : undefined, 'building:levels': typeof levels === 'string' ? levels : undefined },
       geometry,
     };
-    return [{ item, lat, lon }];
+    const access = feature.properties.access;
+    const plot = feature.properties.landuse === 'greenfield' && (!building || building === 'no') &&
+      !['private', 'no', 'customers', 'permit'].some(value => value === access);
+    if (plot) item.properties.landuse = 'greenfield';
+    return [{ item, lat, lon, plot }];
   });
-  const features = Object.values(slices).flatMap(bbox => candidates.filter(({ lat, lon }) => inside(bbox, lat, lon))
+  const features = [...Object.entries(slices), ...Object.entries(additions)].flatMap(([district, bbox]) => candidates
+    .filter(({ lat, lon, plot }) => !plot && inside(bbox, lat, lon))
     .sort((a, b) => Number(RESIDENTIAL_BUILDINGS.some(id => a.item.properties.building === id)) -
       Number(RESIDENTIAL_BUILDINGS.some(id => b.item.properties.building === id)))
-    .slice(0, districtLimit).map(({ item }) => item));
+    .slice(0, Object.hasOwn(additions, district) ? 150 : districtLimit).map(({ item }) => item));
+  features.push(...candidates.filter(c => c.plot).slice(0, plotLimit).map(c => c.item));
   return { features, osmSnapshot: process.env.OSM_EXTRACT_SNAPSHOT, importSource: 'https://download.geofabrik.de/europe/germany/niedersachsen.html' };
 }
 
@@ -115,12 +126,14 @@ const collection = {
 const catalog = new PropertyCatalog(collection);
 collection.features = collection.features.filter(feature => catalog.buildings.has('property:osm:' + feature.id.replace('/', ':')));
 const buildings = [...catalog.buildings.values()];
-const coverage = Object.fromEntries(Object.entries(slices).map(([district, bbox]) => {
-  const count = buildings.filter(({ lat, lon }) => inside(bbox, lat, lon)).length;
+const coverage = Object.fromEntries(Object.entries(extract ? { ...slices, ...additions } : slices).map(([district, bbox]) => {
+  const count = buildings.filter(({ lat, lon, building }) => building !== 'virtual_plot' && inside(bbox, lat, lon)).length;
   if (count < minimumDistrictBuildings) throw new Error(`Zu wenige gültige Wohngebäude in ${district} (${count})`);
   return [district, count];
 }));
-const encoded = JSON.stringify({ ...collection, coverage }) + '\n';
+const plotCount = buildings.filter(building => building.building === 'virtual_plot').length;
+if (extract && !plotCount) throw new Error('Keine geeigneten virtuellen Baugrundstücke im OSM-Auszug');
+const encoded = JSON.stringify({ ...collection, coverage, plotCount }) + '\n';
 if (Buffer.byteLength(encoded) > PROPERTY_CATALOG_MAX_BYTES) throw new Error('Der erzeugte Katalog überschreitet 4 MiB');
 await writeFile(output, encoded, { flag: 'wx' });
 console.log(`${collection.features.length} Gebäude in ${output} gespeichert (OSM-Datenstand ${catalog.osmSnapshot}, ${JSON.stringify(coverage)}).`);

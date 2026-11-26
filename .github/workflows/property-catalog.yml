@@ -34,7 +34,7 @@ jobs:
           osmium extract --strategy=complete_ways --bbox=10.43,52.215,10.62,52.34 \
             --output="$RUNNER_TEMP/braunschweig.osm.pbf" "$RUNNER_TEMP/niedersachsen.osm.pbf"
           buildings="$(npx --no-install tsx --eval "import { PROPERTY_BUILDINGS } from '@nam/shared'; console.log(PROPERTY_BUILDINGS.join(','))")"
-          osmium tags-filter --output="$RUNNER_TEMP/residential.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" "w/building=$buildings"
+          osmium tags-filter --output="$RUNNER_TEMP/residential.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" "w/building=$buildings" "w/landuse=greenfield"
           osmium export --geometry-types=polygon --attributes=type,id --output-format=geojson \
             --output="$RUNNER_TEMP/residential.geojson" "$RUNNER_TEMP/residential.osm.pbf"
           OSM_EXTRACT_GEOJSON="$RUNNER_TEMP/residential.geojson" OSM_EXTRACT_SNAPSHOT="$snapshot" \
