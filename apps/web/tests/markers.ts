@@ -12,7 +12,7 @@ assert.ok(markerCategories({ ...mob, k: 'npc', def: 'mira' }).includes('questGiv
 assert.deepEqual(markerCategories({ ...mob, k: 'house', def: 'guild' }), ['guildHouse']);
 assert.deepEqual(markerCategories({ ...mob, k: 'territory', def: 'territory', r: 150 }), ['territory']);
 assert.deepEqual(markerCategories({ ...mob, k: 'house', def: 'property', extra: { source: 'OpenStreetMap' } }), ['property']);
-assert.equal(propertyMarkerStatus('sale')?.label, 'Kauf verfügbar');
+assert.equal(propertyMarkerStatus('sale')?.label, 'Kauf oder Miete verfügbar');
 assert.equal(propertyMarkerStatus(undefined), undefined);
 assert.equal(propertyMarkerType('apartments').label, 'Wohngebäude');
 assert.equal(propertyMarkerType('office').label, 'Gewerbeimmobilie');

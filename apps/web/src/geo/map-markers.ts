@@ -26,9 +26,9 @@ export type MarkerCategory = keyof typeof MARKER_CATEGORIES;
 const questGivers = new Set(Object.values(QUESTS).filter(quest => quest.type !== 'hidden').map(quest => quest.giver));
 
 export const PROPERTY_MARKER_STATUSES = {
-  sale: { label: 'Kauf verfügbar', color: '#80e697', symbol: '+' },
+  sale: { label: 'Kauf oder Miete verfügbar', color: '#80e697', symbol: '+' },
   own: { label: 'Dein Eigentum', color: '#85c8ff', symbol: '✓' },
-  rent: { label: 'Mietangebot', color: '#ffe085', symbol: 'M' },
+  rent: { label: 'Von dir gemietet', color: '#ffe085', symbol: 'M' },
   rented: { label: 'Vermietet', color: '#b2bdcf', symbol: '×' },
   owned: { label: 'Vergeben', color: '#b2bdcf', symbol: '×' },
 } as const;

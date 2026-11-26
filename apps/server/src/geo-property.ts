@@ -1,4 +1,4 @@
-import { BAL, GEO, PROPERTY_REGION, PROPERTY_BUILD_COST, VIRTUAL_PLOT, haversine, validPropertyId, type Character, type GeoPropertyBuilding, type GeoPropertyOffer } from '@nam/shared';
+import { BAL, GEO, PROPERTY_REGION, PROPERTY_RENT_DAYS, propertyRentGold, PROPERTY_BUILD_COST, VIRTUAL_PLOT, haversine, validPropertyId, type Character, type GeoPropertyBuilding, type GeoPropertyOffer } from '@nam/shared';
 import { saveCharacter } from './character-save';
 import { moveToOwnedProperty, pushGeo } from './geo';
 import { propertyCatalog } from './geo-property-data';
@@ -73,13 +73,30 @@ function offerFor(p: Player, building: GeoPropertyBuilding, detailed = false): G
     houseId: emptyPlot ? undefined : house?.id,
     buildGold: emptyPlot && mine ? PROPERTY_BUILD_COST : undefined,
     usableAreaEstimateM2: emptyPlot ? undefined : building.unitAreaM2 ?? Math.round(building.floorAreaM2 * .75),
-    sellGold: mine ? Math.floor(owner.purchaseGold * BAL.propertyResaleRate) : undefined,
+    sellGold: mine && !owner.rentUntil ? Math.floor(owner.purchaseGold * BAL.propertyResaleRate) : undefined,
+    rentGold: building.building === VIRTUAL_PLOT ? undefined : propertyRentGold(building.buyGold),
+    rentUntil: mine ? owner.rentUntil : undefined, rentOverdue: mine && !!owner.rentUntil && owner.rentUntil < now() ? true : undefined,
     distanceM: g?.on && g.has ? Math.round(haversine(g.lat, g.lon, building.lat, building.lon)) : undefined,
   };
 }
 
+/** Abgelaufene Miete endet nur, wenn Lager, Garten und Einrichtung leer sind; sonst bleibt der Vertrag bis zur Verlängerung bestehen (kein Datenverlust). */
+function releaseExpiredRental(p: Player) {
+  const owned = p.c.geoProperty;
+  const house = p.c.houseId ? G.houses.get(p.c.houseId) : undefined;
+  if (!owned?.rentUntil || owned.rentUntil >= now() || !house || house.propertyId !== owned.id) return;
+  if (p.houseId || G.houseOcc.get(house.id)?.size || house.stash.length || house.furniture.length || house.garden) return;
+  delete p.c.geoProperty;
+  p.c.houseId = null;
+  G.houses.delete(house.id);
+  G.houseOcc.delete(house.id);
+  deleteInterior(house.id);
+  p.dirty = true;
+}
+
 NO_CHAR.add('geoPropertyList');
 H.geoPropertyList = async (p, m) => {
+  releaseExpiredRental(p);
   const catalog = propertyCatalog();
   if (m.id !== undefined && !validPropertyId(m.id)) return 'Ungültige Immobilie';
   const mine = p.c.geoProperty?.building;
@@ -141,6 +158,49 @@ H.geoPropertyBuy = async (p, m) => {
   return { property: offerFor(p, building) };
 };
 
+H.geoPropertyRent = async (p, m) => {
+  const g = p.geo;
+  const building = g?.on && g.has && validPropertyId(m.id) ? findProperty(m.id, g.lat, g.lon) : undefined;
+  if (!building) return 'Immobilie nicht im Katalog';
+  if (building.building === VIRTUAL_PLOT) return 'Baugrundstücke können nicht gemietet werden';
+  const error = propertyAccess(p, building);
+  if (error) return error;
+  if (p.trade) return 'Beende zuerst den Handel';
+  if (p.c.houseId) return 'Du besitzt bereits ein Haus';
+  if (houseFor(building.id)) return 'Immobilie ist bereits vergeben';
+  const rent = propertyRentGold(building.buyGold);
+  if (p.c.gold < rent) return 'Nicht genug Gold';
+  const h = seededHouse(uid('h'), p.c, building.id);
+  p.c.gold -= rent;
+  p.c.geoProperty = { id: building.id, purchaseGold: building.buyGold, building, rentUntil: now() + PROPERTY_RENT_DAYS * 864e5 };
+  p.c.houseId = h.id;
+  G.houses.set(h.id, h);
+  await saveOwnership(p, () => {
+    G.houses.delete(h.id);
+    delete p.c.geoProperty;
+    p.c.houseId = null;
+    p.c.gold += rent;
+  });
+  pushGeo(p);
+  return { property: offerFor(p, building) };
+};
+
+H.geoPropertyRenew = async (p, m) => {
+  const house = ownerHouse(p, m.id);
+  const owned = p.c.geoProperty;
+  if (!house || !owned?.rentUntil) return 'Kein laufender Mietvertrag';
+  if (p.trade) return 'Beende zuerst den Handel';
+  const rent = propertyRentGold(owned.building.buyGold);
+  const previous = owned.rentUntil;
+  const next = Math.max(now(), previous) + PROPERTY_RENT_DAYS * 864e5;
+  if (next - now() > 4 * PROPERTY_RENT_DAYS * 864e5) return 'Die Miete kann höchstens vier Wochen im Voraus verlängert werden';
+  if (p.c.gold < rent) return 'Nicht genug Gold';
+  p.c.gold -= rent;
+  owned.rentUntil = next;
+  await saveOwnership(p, () => { owned.rentUntil = previous; p.c.gold += rent; });
+  return { property: offerFor(p, owned.building) };
+};
+
 H.geoPropertyBuild = async (p, m) => {
   const house = ownerHouse(p, m.id);
   const owned = p.c.geoProperty;
@@ -165,7 +225,7 @@ H.geoPropertySell = async (p, m) => {
     return 'Verkauf gerade nicht möglich';
   if (house.stash.length || house.furniture.length || house.garden) return 'Leere zuerst Lager, Garten und Einrichtung';
   const owned = p.c.geoProperty!;
-  const gold = Math.floor(owned.purchaseGold * BAL.propertyResaleRate);
+  const gold = owned.rentUntil ? 0 : Math.floor(owned.purchaseGold * BAL.propertyResaleRate); // Mietverträge werden ohne Erstattung beendet
   delete p.c.geoProperty;
   p.c.houseId = null;
   p.c.gold += gold;

@@ -479,7 +479,7 @@ export function pushGeo(p: Player) {
   for (const item of objs) {
     if (item.def !== 'property') continue;
     const claimant = claims.get(item.id);
-    item.extra.marketStatus = claimant === p.id ? 'own' : claimant ? 'owned' : 'sale';
+    item.extra.marketStatus = claimant === p.id ? (p.c.geoProperty?.rentUntil ? 'rent' : 'own') : claimant ? 'owned' : 'sale';
   }
   send(p, { t: 'geo', me: position, objs, players, rev: t });
 }

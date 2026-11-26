@@ -6,7 +6,10 @@ export const PROPERTY_BUILDINGS = [...RESIDENTIAL_BUILDINGS, 'commercial', 'reta
 export const supportedPropertyBuilding = (name: unknown): name is typeof PROPERTY_BUILDINGS[number] =>
   PROPERTY_BUILDINGS.some(building => building === name);
 
-export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding; built?: true }
+export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding; built?: true; /** Mietvertrag: Ablaufzeit (ms); ohne Wert = Eigentum im Spiel */ rentUntil?: number }
+export const PROPERTY_RENT_DAYS = 7;
+/** Spielinterne Wochenmiete (keine realen Eigentums- oder Mietrechte) */
+export const propertyRentGold = (buyGold: number) => Math.max(100, Math.round(buyGold * .05 / 10) * 10);
 export const VIRTUAL_PLOT = 'virtual_plot' as const;
 export const PROPERTY_BUILD_COST = 3500;
 
@@ -35,6 +38,10 @@ export interface GeoPropertyOffer extends Omit<GeoPropertyBuilding, 'footprint'>
   footprint?: GeoPropertyFootprint;
   status: 'available' | 'owned' | 'mine';
   sellGold?: number;
+  /** Wochenmiete in Gold (nicht für Baugrundstücke) */
+  rentGold?: number;
+  rentUntil?: number;
+  rentOverdue?: boolean;
   houseId?: string;
   buildGold?: number;
   usableAreaEstimateM2?: number;
@@ -85,7 +92,7 @@ export function validPropertyOwnership(value: unknown): value is GeoPropertyOwne
     building.floorAreaM2 === (building.footprintM2 as number) * building.levels;
   if (building.unitAreaM2 !== undefined && (building.building !== 'apartments' ||
     !positiveInt(building.unitAreaM2) || typeof building.floorAreaM2 !== 'number' || building.unitAreaM2 > building.floorAreaM2)) return false;
-  return (value.built === undefined || (value.built === true && plot)) && building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
+  return (value.rentUntil === undefined || (positiveInt(value.rentUntil) && !plot)) && (value.built === undefined || (value.built === true && plot)) && building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
     positiveInt(building.footprintM2) && validArea &&
     typeof building.levelsEstimated === 'boolean' && building.buyGold === value.purchaseGold &&
     validPosition(building.lon, building.lat) && validPropertyFootprint(building.footprint);

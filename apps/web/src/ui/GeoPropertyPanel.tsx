@@ -124,7 +124,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
       <div className="col scroll" style={{ maxHeight: '55vh' }}>{displayed.map(property => {
         const name = property.unitAreaM2 ? 'Wohnung im Mehrfamilienhaus' : buildingNames[property.building] || 'Wohngebäude';
         const nearby = inRange(property);
-        const status = property.status === 'mine' ? 'Dein Eigentum' : property.status === 'owned' ? 'Vergeben' : 'Kauf verfügbar';
+        const status = property.status === 'mine' ? (property.rentUntil ? 'Gemietet' : 'Dein Eigentum') : property.status === 'owned' ? 'Vergeben' : 'Kauf oder Miete';
         return <article key={property.id} className="card col">
           <div className="row wrap"><b className="grow">{name}</b><span className="pill">{status}</span></div>
           <div className="sm">
@@ -139,7 +139,8 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
           <div className="row wrap sm dim">
             {property.distanceM !== undefined && <span>{fmt(property.distanceM)} m entfernt</span>}
             <a href={`https://www.openstreetmap.org/${property.osmId}`} target="_blank" rel="noreferrer">{PROPERTY_SOURCE}</a>
-            {property.status === 'available' && <span className="gold">{fmt(property.buyGold)} Gold</span>}
+            {property.status === 'available' && <span className="gold">{fmt(property.buyGold)} Gold{property.rentGold ? ` · Miete ${fmt(property.rentGold)} Gold/Woche` : ''}</span>}
+            {property.rentUntil && <span>Miete bis {new Date(property.rentUntil).toLocaleDateString('de-DE')}{property.rentOverdue ? ' (überfällig – bitte verlängern)' : ''}</span>}
           </div>
           <div className="row wrap">
             {!id && <button className="btn sm" onClick={() => set({ selected: { id: property.id } })}>Besichtigen</button>}
@@ -147,6 +148,11 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
             {property.status === 'available' && <button className="btn sm pri"
               disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.buyGold}
               onClick={() => void action('geoPropertyBuy', property)}>Kaufen</button>}
+            {property.status === 'available' && !!property.rentGold && <button className="btn sm"
+              disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.rentGold}
+              onClick={() => void action('geoPropertyRent', property)}>Mieten</button>}
+            {property.status === 'mine' && !!property.rentUntil && !!property.rentGold && <button className="btn sm" disabled={busy || (char?.gold ?? 0) < property.rentGold}
+              onClick={() => void action('geoPropertyRenew', property)}>Miete verlängern ({fmt(property.rentGold)} Gold)</button>}
             {property.buildGold !== undefined && <button className="btn sm" disabled={busy || !nearby || (char?.gold ?? 0) < property.buildGold}
               onClick={() => void action('geoPropertyBuild', property)}>Für {fmt(property.buildGold)} Gold bebauen</button>}
             {property.houseId && nearby && <button className="btn sm pri" disabled={busy}
@@ -154,9 +160,9 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
             {property.status === 'mine' && <button className="btn sm" disabled={busy || !catalog.virtual}
               onClick={() => void action('geoPropertyTravel', property)}>Nach Hause reisen</button>}
             {property.status === 'mine' && confirmSale !== property.id && <button className="btn sm dng" disabled={busy}
-              onClick={() => setConfirmSale(property.id)}>Für {fmt(property.sellGold ?? 0)} Gold verkaufen</button>}
+              onClick={() => setConfirmSale(property.id)}>{property.rentUntil ? 'Mietvertrag beenden' : `Für ${fmt(property.sellGold ?? 0)} Gold verkaufen`}</button>}
             {property.status === 'mine' && confirmSale === property.id && <>
-              <button className="btn sm dng" disabled={busy} onClick={() => void action('geoPropertySell', property)}>Verkauf bestätigen</button>
+              <button className="btn sm dng" disabled={busy} onClick={() => void action('geoPropertySell', property)}>{property.rentUntil ? 'Beenden bestätigen' : 'Verkauf bestätigen'}</button>
               <button className="btn sm" disabled={busy} onClick={() => setConfirmSale('')}>Abbrechen</button>
             </>}
           </div>
@@ -167,7 +173,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
       })}</div>
       {(catalog.snapshot || !!catalog.list.length) && <p className="xs dim">
         Gebäudedaten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap-Mitwirkende</a>
-        {catalog.snapshot ? ` · Datenstand ${catalog.snapshot.slice(0, 10)}` : ''}. Preise gelten im Spiel.
+        {catalog.snapshot ? ` · Datenstand ${catalog.snapshot.slice(0, 10)}` : ''}. Preise und Mieten gelten nur im Spiel; es entstehen keine realen Eigentums- oder Mietrechte.
       </p>}
     </>}
   </Win>;

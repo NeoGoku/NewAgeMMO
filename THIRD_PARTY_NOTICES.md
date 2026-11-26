@@ -7,7 +7,9 @@ Dieses Dokument ergänzt `docs/ASSET_LICENSES.md` um Herkunft, Lizenz und Änder
 |---|---|---|
 | OpenStreetMap-Mitwirkende | Geometrien und Namen in allen Vektorkarten und der Standard-Rasterkarte | ODbL 1.0 – Attribution „© OpenStreetMap-Mitwirkende“ bleibt in der Karte sichtbar |
 | OpenFreeMap (`tiles.openfreemap.org/planet`) | Vektorkacheln im OpenMapTiles-Schema (nur Daten, keine fremde Style-JSON, keine API-Schlüssel) | Daten ODbL; Schema © OpenMapTiles (CC BY 4.0) – Attribution in der Karte |
-| EOX Sentinel-2 cloudless 2024 / NASA Blue Marble | Satellitenbilder (unverändert wie zuvor) | siehe `docs/ASSET_LICENSES.md` |
+| LGLN Digitale Orthophotos DOP20 (Niedersachsen) | Satellitenkarte im Detailzoom (WMS, 20 cm) | CC BY 4.0, Quellenvermerk „Luftbilder © LGLN (DOP20)“; geprüft per GetCapabilities/GetMap (HTTP 200, CORS `*`, EPSG:3857) |
+| EOX Sentinel-2 cloudless 2024 / NASA Blue Marble | nur Übersicht (≤ Zoom 14) | siehe `docs/ASSET_LICENSES.md` |
+| BKG DOP (`sg.geodatenzentrum.de/wms_dop*`) | nicht genutzt | Endpunkte antworteten mit ERROR_UNKNOWN_SERVICE bzw. NOACCESS_SERVICE; nicht erreichbar/freigegeben |
 
 ## Schriften (lokal als SDF-Glyphen unter `apps/web/public/fonts/`)
 Aus den OFL-lizenzierten Schriften wurden mit `fontnik` (BSD) Glyphen-PBFs (Latin 0–511, Satzzeichen 8192–8447) erzeugt. Die Stapel tragen eigene Namen (`NAM …`), da es sich um abgeleitete Daten handelt. Lizenztexte: `apps/web/public/fonts/licenses/`.
