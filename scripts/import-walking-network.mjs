@@ -56,14 +56,32 @@ for await (const line of createInterface({ input: createReadStream(source), crlf
     }
   }
 }
-if (points.length < 2000 || points.length > 180000 || edges.length < 4000 || edges.length > 450000) {
+if (points.length < 2000 || points.length > 360000 || edges.length < 4000 || edges.length > 800000) {
   throw new Error(`Unplausibler Gehwegenetz-Extrakt (${points.length / 2} Knoten, ${edges.length / 2} Kanten).`);
 }
+function pack(values) {
+  const bytes = [];
+  const previous = [0, 0];
+  values.forEach((current, i) => {
+    const field = i % 2;
+    const delta = current - previous[field];
+    previous[field] = current;
+    let value = delta < 0 ? -delta * 2 - 1 : delta * 2;
+    while (value >= 128) {
+      bytes.push(value % 128 + 128);
+      value = Math.floor(value / 128);
+    }
+    bytes.push(value);
+  });
+  return Buffer.from(bytes).toString('base64');
+}
 const data = {
-  version: 1, source: 'OpenStreetMap', snapshot, points, edges,
+  version: 2, source: 'OpenStreetMap', snapshot, points: pack(points), edges: pack(edges),
   attribution: '© OpenStreetMap contributors', sourceUrl: 'https://www.openstreetmap.org/copyright',
   importSource: 'https://download.geofabrik.de/europe/germany/niedersachsen.html',
   license: 'https://opendatacommons.org/licenses/odbl/1-0/',
 };
-await writeFile(destination, JSON.stringify(data) + '\n', { flag: 'wx' });
+const output = JSON.stringify(data) + '\n';
+if (Buffer.byteLength(output) > 5_000_000) throw new Error('OSM-Gehwegenetz ist zu groß.');
+await writeFile(destination, output, { flag: 'wx' });
 console.log(`${points.length / 2} Knoten und ${edges.length / 2} gerichtete Kanten (${snapshot}).`);
