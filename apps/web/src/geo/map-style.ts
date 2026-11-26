@@ -52,6 +52,10 @@ const credit = (href: string, text: string, license: string, licenseHref: string
 export const AERIAL_SOURCES: AerialSource[] = [
   { id: 'ni', name: 'Niedersachsen (LGLN DOP20, 20 cm)', layer: 'ni_dop20', format: 'image/vnd.jpeg-png', url: 'https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms', bounds: [6.505772, 51.153098, 11.754046, 54.148101],
     attribution: credit('https://www.lgln.niedersachsen.de/startseite/geodaten_karten/digitale_orthophotos', 'Luftbilder © LGLN (DOP20)', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/deed.de') },
+  { id: 'nrw', name: 'Nordrhein-Westfalen (DOP)', layer: 'nw_dop_rgb', format: 'image/png', url: 'https://www.wms.nrw.de/geobasis/wms_nw_dop', bounds: [5.864417, 50.32088, 9.468311, 52.53345],
+    attribution: credit('https://www.bezreg-koeln.nrw.de/system/files/media/document/file/lizenzbedingungen_geobasis_nrw.pdf', 'Luftbilder © Geobasis NRW', 'dl-de/zero-2-0', 'https://www.govdata.de/dl-de/zero-2-0') },
+  { id: 'st', name: 'Sachsen-Anhalt (DOP20)', layer: 'lsa_lvermgeo_dop20_2', format: 'image/png', url: 'https://www.geodatenportal.sachsen-anhalt.de/wss/service/ST_LVermGeo_DOP_WMS_OpenData/guest', bounds: [10.56074, 50.93098, 13.15432, 53.0417],
+    attribution: credit('https://geodatenportal.sachsen-anhalt.de/gfds/datei/anzeigen/id/3567,501/nutzungsbedingungen_b.pdf', 'Luftbilder © GeoBasis-DE / LVermGeo ST', 'dl-de/by-2-0', 'https://www.govdata.de/dl-de/by-2-0') },
   { id: 'th', name: 'Thüringen (DOP20)', layer: 'th_dop', format: 'image/png', url: 'https://www.geoproxy.geoportal-th.de/geoproxy/services/DOP20', bounds: [9.798641, 50.140132, 12.887084, 51.691062],
     attribution: credit('https://www.geoportal-th.de/', 'Luftbilder © GDI-Th', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/deed.de') },
   { id: 'he', name: 'Hessen (DOP20)', layer: 'he_dop20_rgb', format: 'image/vnd.jpeg-png', url: 'https://www.gds-srv.hessen.de/cgi-bin/lika-services/ogc-free-images.ows', bounds: [7.41867, 49.25, 10.5, 51.7596],

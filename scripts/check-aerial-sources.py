@@ -41,8 +41,14 @@ def check(source):
     try:
         _, document = fetch(url, dict(SERVICE='WMS', VERSION='1.1.1', REQUEST='GetCapabilities'))
         root = ET.fromstring(document)
-        if not any(node.text == layer for node in root.iter() if node.tag.split('}')[-1] == 'Name'):
-            raise ValueError('Layer fehlt in GetCapabilities')
+        names = {child.text for node in root.iter() if node.tag.split('}')[-1] == 'Layer'
+                 for child in node if child.tag.split('}')[-1] == 'Name' and child.text}
+        if layer not in names and key == 'sn':
+            alternatives = [name for name in names if 'dop' in name.lower() and 'rgb' in name.lower()]
+            if len(alternatives) == 1:
+                layer = alternatives[0]
+        if layer not in names:
+            raise ValueError('Layer fehlt in GetCapabilities. Verfügbar: ' + ', '.join(sorted(names))[:350])
         tile(url, layer, lat, lon, PAGES)
         outer = tile(url, layer, 49.2, 9.2, PAGES)
         if outer[25] not in (4, 6) and b'tRNS' not in outer:
@@ -52,11 +58,15 @@ def check(source):
             android = 'ja'
         except (OSError, ValueError):
             android = 'nein'
-        return f'{key} OK. Pages-PNG und Transparenz geprüft. Android-CORS {android}.'
+        return f'{key} OK. Layer {layer}. Pages-PNG und Transparenz geprüft. Android-CORS {android}.'
     except (OSError, ValueError, ET.ParseError) as error:
         return f'{key} nicht freigegeben. {error}'
 
 
-with ThreadPoolExecutor(max_workers=3) as pool:
-    for result in pool.map(check, SOURCES):
-        print('::notice::' + result)
+if __name__ == '__main__':
+    import sys
+    requested = set(sys.argv[1:])
+    sources = [s for s in SOURCES if not requested or s[0] in requested]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for result in pool.map(check, sources):
+            print('::notice::' + result)

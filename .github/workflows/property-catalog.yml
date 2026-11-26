@@ -6,6 +6,9 @@ on:
         description: Nur die angebotenen Luftbilddienste prüfen
         type: boolean
         default: false
+      aerial_state:
+        description: Optionaler Ländercode nrw, sn oder st
+        type: string
   push:
     branches: [main]
     paths:
@@ -22,7 +25,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Luftbilder mit Pages-CORS prüfen
         if: inputs.aerial_probe
-        run: python3 scripts/check-aerial-sources.py
+        env:
+          AERIAL_STATE: ${{ inputs.aerial_state }}
+        run: python3 scripts/check-aerial-sources.py $AERIAL_STATE
       - uses: actions/setup-node@v4
         if: ${{ !inputs.aerial_probe }}
         with: { node-version: 22, cache: npm }
