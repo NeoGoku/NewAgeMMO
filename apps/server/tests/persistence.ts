@@ -6,6 +6,7 @@ import { placeNear } from '@nam/game-data';
 import { expToNext } from '@nam/shared';
 import { createCore, type SockLike } from '../src/core';
 import { damageMob, locOf, partyHere, spawnMob } from '../src/game';
+import { setTerrainTile, T, tileXY } from '../src/geo-terrain';
 import { acceptQuest, recordRegionalVisit } from '../src/quests';
 import { exitScene } from '../src/world';
 import { G } from '../src/state';
@@ -144,6 +145,11 @@ async function main() {
   geo.gps = false;
   assert.equal((await b.request('geoQuestSurvey', { id: 'd_regional_survey' })).t, 'ok');
   assert.equal((await b.request('geoQuestSurvey', { id: 'd_regional_survey' })).t, 'err', 'a survey can be recorded only once');
+  const terrain = tileXY(geo.lat, geo.lon);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) setTerrainTile({
+    x: terrain.x + dx, y: terrain.y + dy, grid: new Uint8Array(4096).fill(T.grass),
+    pois: [], places: [], buildings: 200, shares: [], at: Date.now(),
+  });
   assert.equal(acceptQuest(hunter, 'd_regional_hunt'), null);
   const patrol = hunter.c.quests.d_regional_hunt;
   assert.ok(patrol.region);

@@ -1,7 +1,7 @@
 import { CLASS_IDS } from '@nam/shared';
 import { PROFS } from './professions';
 import { CLASSES } from './classes';
-export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'|'region'|'survey'|'regional_hunt'|'regional_gather'; t: string; n: number; label?: string }
+export interface Goal { k: 'kill'|'collect'|'craft'|'visit'|'talk'|'gather'|'boss'|'dungeon'|'region'|'survey'|'regional_hunt'|'regional_gather'|'regional_event'; t: string; n: number; label?: string }
 export interface Reward { exp?: number; gold?: number; items?: { id: string; qty: number; rar?: number }[]; rep?: Record<string, number>; train?: number; stat?: number }
 export interface QuestDef { id: string; name: string; type: 'main'|'side'|'daily'|'class'|'prof'|'hidden'|'event'; giver: string; turnin: string; lvl: number; prereq?: string; desc: string; offer: string; done: string; goals: Goal[]; reward: Reward; choice?: { text: string; options: { id: string; label: string; rep: Record<string, number> }[] }; autoStart?: string; repeat?: 'daily'; scale?: boolean; give?: { id: string; qty: number } }
 export const FACTIONS: Record<string, string> = { rat: 'Magierrat', syndikat: 'Schattensyndikat', union: 'Technikerunion' };
@@ -70,6 +70,12 @@ Q({
   lvl: 1, repeat: 'daily',
   desc: 'Sammle mit passendem Werkzeug eine Ressource im markierten Gebiet. Nur Kartenfunde im Zielgebiet zählen.',
   goals: [g('regional_gather', '*', 1, 'Ressource im Zielgebiet sammeln')], reward: { exp: 35, gold: 40, train: 40 }
+});
+Q({
+  id: 'd_regional_storm', name: 'Täglich: Im Auge des Äthersturms', type: 'daily', giver: 'mira', turnin: 'mira',
+  lvl: 1, repeat: 'daily',
+  desc: 'Schließe dich dem Äthersturm im markierten Gebiet an und trage zum Sieg bei. Andere Spieler können am selben Kampf teilnehmen.',
+  goals: [g('regional_event', 'aetherstorm', 1, 'Zum Sieg im Äthersturm beitragen')], reward: QUESTS.d_regional_hunt.reward,
 });
 Q({ id: 'd_kill', name: 'Täglich: Monsterjagd', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Besiege 20 beliebige Gegner.', goals: [g('kill', '*', 20)], reward: {} });
 Q({ id: 'd_gather', name: 'Täglich: Sammler', type: 'daily', giver: 'orwin', turnin: 'orwin', lvl: 1, repeat: 'daily', scale: true, desc: 'Sammle 10 Ressourcen.', goals: [g('gather', '*', 10)], reward: { train: 80 } });

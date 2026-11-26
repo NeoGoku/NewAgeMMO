@@ -2,9 +2,9 @@ import { finishTravel, leaveDungeon } from './world';
 import { publishProgress } from './character-save';
 import { BAL, mitig, type EvtView, type Rarity, type ItemInst, CLASS_BASE, RARITY_MULT } from '@nam/shared';
 import { LOCS, MOBS, NODES, SKILLS, SPECIES, WEATHER, ITEMS, CLASSES, SUMMON_STATS, QUESTS, EGG_SPECIES_BY_FAMILY, petExp, type MobDef, type SkillDef, type NodeDef } from '@nam/game-data';
-import { G, now, rnd, rint, clamp, dist, uid, send, sys, toLoc, type Player, type Mob, type LocState, type Fx, type NodeS, type DungeonState } from './state';
+import { G, now, rnd, rint, clamp, dist, uid, send, sys, toLoc, type Player, type Mob, type LocState, type Fx, type NodeS, type DungeonState, type GeoChallenge } from './state';
 import { invAdd, recalc, curSt, gainExp, mkItem, rollRarity, isEquip, addTrainExp } from './chars';
-import { questEvent, recordRegionalHunt } from './quests';
+import { questEvent, recordRegionalEvent, recordRegionalHunt } from './quests';
 const Y0 = 52, Y1 = 94;
 export function initWorld() {
   for (const def of Object.values(LOCS)) {
@@ -14,9 +14,15 @@ export function initWorld() {
     G.locs.set(def.id, l);
   }
 }
-export function newDungeon(key: string, def: LocState['def']): DungeonState {
+export function newDungeon(key: string, def: LocState['def'], challenge?: GeoChallenge): DungeonState {
   const dungeon: DungeonState = { key, id: def.id, def, players: new Set(), mobs: [], nodes: [], weather: 'clear', weatherUntil: 0, evts: [], bossText: [] };
-  for (const spawn of def.spawns) for (let i = 0; i < spawn.n; i++) spawnMob(dungeon, spawn.mob, false);
+  if (challenge) {
+    dungeon.challenge = challenge;
+    const target = spawnMob(dungeon, challenge.target, false, { x: 70, y: 70 });
+    if (challenge.kind === 'event') eventProfile(target, challenge.title);
+  } else {
+    for (const spawn of def.spawns) for (let i = 0; i < spawn.n; i++) spawnMob(dungeon, spawn.mob, false);
+  }
   return dungeon;
 }
 export function spawnMob(l: LocState, id: string, add: boolean, at?: { x: number; y: number }): Mob {
@@ -48,7 +54,7 @@ export function playerHit(p: Player, target: Mob | Player, pow: number, el: stri
   damagePlayer(t, a, crit, p, el); return a;
 }
 export function damageMob(p: Player, m: Mob, a: number, crit: boolean, el: string) {
-  const l = locOf(p); if (m.dead || !canEngageMob(p, m)) return; m.hp -= a; m.dmg[p.id] = (m.dmg[p.id] || 0) + a; m.threat[p.id] = (m.threat[p.id] || 0) + a * (1 + fxSum(p.fx, 'taunt')); m.lastHit = now(); m.flashT = now() + 150;
+  const l = locOf(p); if (m.dead || !canEngageMob(p, m) || (m.dungeon?.challenge?.endsAt ?? Infinity) <= now()) return; m.hp -= a; m.dmg[p.id] = (m.dmg[p.id] || 0) + a; m.threat[p.id] = (m.threat[p.id] || 0) + a * (1 + fxSum(p.fx, 'taunt')); m.lastHit = now(); m.flashT = now() + 150;
   p.combatUntil = now() + 6000; ev(l, { k: crit ? 'crit' : 'dmg', x: m.x, y: m.y - 14, v: a, el, id: m.uid });
   if (CLASS_BASE[p.c.cls].resRegen === 0) p.c.res = Math.min(p.st.maxRes, p.c.res + 5);
   phaseCheck(l, m);
@@ -79,23 +85,38 @@ export function endDuel(w: Player, l: Player) { const win = w, lose = l; win.due
 // ---------- Tod/Beute ----------
 function killMob(l: LocState, m: Mob) {
   m.dead = true; m.hp = 0; m.respawnAt = now() + m.def.respawn * 1000 * (m.add ? 0 : 1); ev(l, { k: 'die', x: m.x, y: m.y, id: m.uid });
+  const challenge = !m.add ? m.dungeon?.challenge : undefined;
+  if (challenge) {
+    challenge.completed = true;
+    G.geoTaken.set(challenge.markerId, challenge.endsAt);
+  }
+  if (m.dungeon && m.def.role === 'boss') m.respawnAt = Infinity;
+  const rewarded = new Set<Player>();
   const parts: Player[] = []; const seen = new Set<string>();
-  for (const pid of Object.keys(m.dmg)) { const p = G.players.get(pid); if (p && p.online && l.players.has(p) && !seen.has(p.id)) { seen.add(p.id); parts.push(p); if (p.partyId && !m.mapEncounter) for (const mid of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(mid); if (q && q.online && l.players.has(q) && !q.dead && !seen.has(q.id)) { seen.add(q.id); parts.push(q); } } } }
+  for (const pid of Object.keys(m.dmg)) { const p = G.players.get(pid); if (p && p.online && l.players.has(p) && !seen.has(p.id)) { seen.add(p.id); parts.push(p); if (p.partyId && !m.mapEncounter && !challenge) for (const mid of G.parties.get(p.partyId)?.members || []) { const q = G.players.get(mid); if (q && q.online && l.players.has(q) && !q.dead && !seen.has(q.id)) { seen.add(q.id); parts.push(q); } } } }
   const groups = new Map<string, Player[]>(); for (const p of parts) { const k = p.partyId || p.id; (groups.get(k) || groups.set(k, []).get(k)!).push(p); }
   for (const [, g] of groups) {
     const n = g.length; const bonus = 1 + .15 * (n - 1); const party = n > 1 ? G.parties.get(g[0].partyId!) : null; const totLv = g.reduce((s, p) => s + p.c.level, 0);
     for (const p of g) {
       const share = party?.expMode === 'level' ? p.c.level / totLv : 1 / n; const diff = p.c.level - m.lvl; const lf = diff > 8 ? Math.max(.1, 1 - (diff - 8) * .1) : 1;
-      if ((m.dmg[p.id] || 0) < m.maxHp * (m.def.role === 'boss' ? .005 : .0) && n === 1) continue;
+      if ((m.dmg[p.id] || 0) < m.maxHp * (m.def.role === 'boss' ? .005 : .0) && (challenge || n === 1)) continue;
       const countsForQuest = !m.add || isPrimaryEncounter(m);
-      const bossReward = m.dungeon && m.def.role === 'boss' ? 'dungeonReward:' + m.def.id : undefined;
+      const bossReward = m.dungeon && m.def.role === 'boss' && !challenge ? 'dungeonReward:' + m.def.id : undefined;
       const rewardDay = String(Math.floor(now() / 864e5));
       if (bossReward && p.c.choices[bossReward] === rewardDay) {
         sys(p, 'Die Gruppenbelohnung für diesen Boss hast du heute bereits erhalten.');
         continue;
       }
+      const challengeKey = challenge && m.dungeon?.key;
+      if (challengeKey && (p.c.geoChallengeRewards?.[challengeKey] ?? 0) > now()) continue;
       let gold = 0;
+      rewarded.add(p);
       publishProgress(p, () => {
+        if (challenge && challengeKey) {
+          const active = Object.fromEntries(Object.entries(p.c.geoChallengeRewards ?? {}).filter(([, until]) => until > now()));
+          p.c.geoChallengeRewards = { ...active, [challengeKey]: challenge.endsAt };
+          if (challenge.kind === 'event') recordRegionalEvent(p, challenge.point);
+        }
         if (bossReward) p.c.choices[bossReward] = rewardDay;
         if (isPrimaryEncounter(m) && m.mapEncounter) p.c.loc = m.mapEncounter.origin;
         gainExp(p, m.def.exp * share * bonus * lf * (n > 1 ? n : 1) / (n > 1 ? 1 : 1)); lootFor(p, m, m.add ? .1 : 1); petExpGain(p, m.def.exp * .2);
@@ -107,13 +128,22 @@ function killMob(l: LocState, m: Mob) {
         const gd = p.c.guildId && G.guilds.get(p.c.guildId); if (gd) { gd.exp += Math.ceil(m.def.exp * .02); const gm = gd.members[p.id]; if (gm) gm.contrib += 1; guildLevel(gd); if (gd.quest.id === 'kills' && countsForQuest) gd.quest.prog++; }
       }, () => {
         ev(l, { k: 'loot', x: m.x, y: m.y - 10, v: `+${gold}g`, id: p.id });
+        if (challenge && p.dungeon?.dungeon === l) {
+          sys(p, `${challenge.title} abgeschlossen · +${gold} Gold`, 'boss');
+          leaveDungeon(p);
+          p.combatUntil = 0;
+        }
         if (m.mapEncounter && m.mapEncounter === p.mapEncounter && isPrimaryEncounter(m) && p.inScene && !p.dead && p.loc === l.id) {
           m.mapEncounter.finish();
         }
       });
     }
   }
-  if (m.def.role === 'boss') toLoc(l, { t: 'chat', ch: 'boss', from: '', text: `${m.def.name} wurde besiegt!`, at: now() });
+  if (challenge) for (const p of [...l.players]) if (!rewarded.has(p)) {
+    sys(p, `${challenge.title} beendet. Du hast nicht genug zum Kampf beigetragen.`, 'boss');
+    leaveDungeon(p);
+  }
+  if (m.def.role === 'boss' && !challenge) toLoc(l, { t: 'chat', ch: 'boss', from: '', text: `${m.def.name} wurde besiegt!`, at: now() });
   if (m.def.role === 'boss' && !m.dungeon) for (const p of G.players.values()) if (p.online) sys(p, `⚔ ${m.def.name} wurde besiegt!`, 'boss');
   for (const p of l.players) if (p.target === m.uid) { p.target = null; if (p.auto && !p.autoFarm) p.auto = false; }
 }
@@ -185,6 +215,15 @@ function approach(p: Player, t: { x: number; y: number }) { const d = dist(p, t)
 export function worldTick() {
   const t = now(); const t0 = Date.now(); G.stats.ticks++; const dt = BAL.tickMs / 1000;
   for (const l of [...G.locs.values(), ...G.dungeons.values()]) {
+    const challenge = 'key' in l ? (l as DungeonState).challenge : undefined;
+    if (challenge && !challenge.completed && t >= challenge.endsAt) {
+      for (const p of [...l.players]) {
+        sys(p, `${challenge.title} ist abgelaufen.`, 'boss');
+        leaveDungeon(p);
+        p.combatUntil = 0;
+      }
+      continue;
+    }
     if (!l.weatherUntil || t > l.weatherUntil) { const w = l.def.weather; l.weather = w[rint(0, w.length - 1)]; l.weatherUntil = t + BAL.weatherMs * rnd(.7, 1.4); }
     l.mobs = l.mobs.filter(m => {
       if (!m.mapEncounter || m.dead) return true;
@@ -332,9 +371,14 @@ export function respawnAll() { for (const l of G.locs.values()) for (const m of 
 export { fxSum, addFx, fxHas, ev, locOf, inPvp };
 
 // ---------- Welt-Events ----------
+function eventProfile(m: Mob, name: string) {
+  const def = m.def;
+  m.def = { ...def, name, exp: def.exp * 3, gold: [def.gold[0] * 3, def.gold[1] * 3], respawn: 1e9 };
+  m.maxHp = m.hp = def.hp * 2;
+}
 export function worldEvent() {
   const cands = [...G.locs.values()].filter(l => !l.def.safe && !l.def.pvp && l.players.size > 0 && l.def.spawns.some(s => MOBS[s.mob].role === 'elite'));
   if (!cands.length) return; const l = cands[rint(0, cands.length - 1)]; const sp = l.def.spawns.filter(s => MOBS[s.mob].role === 'elite'); const d = MOBS[sp[rint(0, sp.length - 1)].mob];
-  const m = spawnMob(l, d.id, false); m.def = { ...d, name: `⚡ ${d.name} (Event)`, exp: d.exp * 3, gold: [d.gold[0] * 3, d.gold[1] * 3], respawn: 1e9 } as MobDef; m.maxHp = m.hp = d.hp * 2; (m as any).event = true;
+  const m = spawnMob(l, d.id, false); eventProfile(m, `⚡ ${d.name} (Event)`); (m as any).event = true;
   for (const p of G.players.values()) if (p.online) sys(p, `⚡ Welt-Event: ${d.name} ist in ${l.def.name} erschienen! Dreifache Belohnung.`, 'boss');
 }

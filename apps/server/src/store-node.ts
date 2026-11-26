@@ -1,4 +1,5 @@
 import fs from 'node:fs'; import path from 'node:path'; import type { Store } from './store';
+import type { Character } from '@nam/shared';
 import { PostgresOsmCache } from './osm-store-pg';
 import { WriteOrder } from './write-order';
 class FileStore implements Store {
@@ -9,9 +10,20 @@ class FileStore implements Store {
   private touch(c: string) { (this.data[c] ||= {}); this.dirty = true; if (!this.timer) this.timer = setTimeout(() => { this.timer = null; void this.flush().catch(error => console.error('file_store_flush', error)); }, 1500); }
   async get(c: string, id: string) { const d = this.data[c]?.[id]; return d ? structuredClone(d) : null; }
   async put(c: string, id: string, doc: any) { this.touch(c); this.data[c][id] = structuredClone(doc); }
+  async putCharacters(characters: readonly Character[]) {
+    const docs = { ...this.data.chars };
+    for (const character of characters) docs[character.id] = structuredClone(character);
+    this.writeCollection('chars', docs);
+    this.data.chars = docs;
+  }
   async del(c: string, id: string) { this.touch(c); delete this.data[c][id]; }
   async all(c: string) { return Object.values(this.data[c] || {}).map(d => structuredClone(d)); }
-  flushSync() { if (!this.dirty) return; for (const c in this.data) { const tmp = this.f(c) + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(this.data[c])); fs.renameSync(tmp, this.f(c)); } this.dirty = false; }
+  private writeCollection(collection: string, documents: unknown) {
+    const file = this.f(collection);
+    fs.writeFileSync(file + '.tmp', JSON.stringify(documents));
+    fs.renameSync(file + '.tmp', file);
+  }
+  flushSync() { if (!this.dirty) return; for (const c in this.data) this.writeCollection(c, this.data[c]); this.dirty = false; }
   async flush() { this.flushSync(); }
   async backup() { const d = path.join(this.dir, 'backup', new Date().toISOString().replace(/[:.]/g, '-')); fs.mkdirSync(d, { recursive: true }); this.flushSync(); for (const c in this.data) fs.copyFileSync(this.f(c), path.join(d, c + '.json')); return d; }
 }
@@ -27,8 +39,17 @@ class PgStore implements Store {
     this.pruneOsm();
   }
   async get(c: string, id: string) { const r = await this.pool.query('select data from docs where coll=$1 and id=$2', [c, id]); return r.rows[0]?.data ?? null; }
-  async put(c: string, id: string, doc: any) { const data = JSON.stringify(doc); await this.writes.run(JSON.stringify([c, id]), () => this.pool.query('insert into docs(coll,id,data,updated_at) values($1,$2,$3,now()) on conflict (coll,id) do update set data=$3, updated_at=now()', [c, id, data])); }
-  async del(c: string, id: string) { await this.writes.run(JSON.stringify([c, id]), () => this.pool.query('delete from docs where coll=$1 and id=$2', [c, id])); }
+  async put(c: string, id: string, doc: any) { const data = JSON.stringify(doc); await this.writes.run(c === 'chars' ? c : JSON.stringify([c, id]), () => this.pool.query('insert into docs(coll,id,data,updated_at) values($1,$2,$3,now()) on conflict (coll,id) do update set data=$3, updated_at=now()', [c, id, data])); }
+  async putCharacters(characters: readonly Character[]) {
+    const data = JSON.stringify(characters);
+    await this.writes.run('chars', () => this.pool.query(`
+      insert into docs (coll, id, data, updated_at)
+      select 'chars', document->>'id', document, now()
+      from jsonb_array_elements($1::jsonb) document
+      on conflict (coll, id) do update set data = excluded.data, updated_at = now()
+    `, [data]));
+  }
+  async del(c: string, id: string) { await this.writes.run(c === 'chars' ? c : JSON.stringify([c, id]), () => this.pool.query('delete from docs where coll=$1 and id=$2', [c, id])); }
   async all(c: string) { const r = await this.pool.query('select data from docs where coll=$1', [c]); return r.rows.map((x: any) => x.data); }
   geoUpsert(id: string, kind: string, lat: number, lon: number, data: any = {}) { void this.hasGis().then(g => g ? this.pool.query('insert into geo_objects(id,kind,geom,data) values($1,$2,ST_SetSRID(ST_MakePoint($4,$3),4326)::geography,$5) on conflict (id) do update set geom=excluded.geom, data=excluded.data, updated_at=now()', [id, kind, lat, lon, JSON.stringify(data)]) : this.pool.query('insert into geo_objects(id,kind,lat,lon,data) values($1,$2,$3,$4,$5) on conflict (id) do update set lat=excluded.lat, lon=excluded.lon, data=excluded.data, updated_at=now()', [id, kind, lat, lon, JSON.stringify(data)])).catch((e: any) => console.error('geoUpsert', e.message)); }
   geoDel(id: string) { void this.pool.query('delete from geo_objects where id=$1', [id]).catch(() => {}); }

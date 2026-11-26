@@ -1,11 +1,11 @@
 import { territoryObjects } from './guild-territories';
 import { GEO, cellId, hash32, haversine, rad, rng, type GeoObj } from '@nam/shared';
-import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NPCS, placeNear, type MobDef } from '@nam/game-data';
+import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NODES, NPCS, placeNear, type MobDef } from '@nam/game-data';
 import { G, now } from './state';
 import { osmObjects } from './geo-osm';
-import { propertyObjects } from './geo-property-regions';
+import { propertyMarker, propertyObjects } from './geo-property-regions';
 import { npcsNear, pickMob, populateCell, tileFeaturesNear } from './geo-spawn';
-import { regionAt, terrainAt } from './geo-terrain';
+import { regionAt, T, terrainAt } from './geo-terrain';
 
 export const anchorList = Object.entries(GEO_ANCHORS);
 const nearestAnchor = (lat: number, lon: number) => {
@@ -66,8 +66,22 @@ function* nearbyCells(lat: number, lon: number, radius: number): Generator<Cell>
 }
 const cellPoint = (c: Cell, uy: number, ux: number) => [(c.row + uy) * GEO.cellDeg, (c.column + ux) * c.width - 180] as const;
 const nearAnchor = (lat: number, lon: number) => anchorList.some(([, a]) => haversine(lat, lon, a[0], a[1]) <= a[2] + 300);
+function fallbackNpc(cell: Cell) {
+  if (wrap(cell.row, 3) !== 0 || cell.column % 3 !== 0) return;
+  const id = cellId(cell.row, cell.column);
+  const [lat, lon] = cellPoint(cell, .32, .68);
+  if (nearAnchor(lat, lon) || terrainAt(lat, lon) !== undefined) return;
+  return npcObject(GEO_REGIONAL_NPCS[hash32('npc:' + id) % GEO_REGIONAL_NPCS.length], lat, lon, 'r:npc:' + id);
+}
+
 export function regionalNpcNearby(id: string, lat: number, lon: number, radius: number) {
-  return GEO_REGIONAL_NPCS.includes(id) && npcsNear(lat, lon, radius).some(npc => npc.def === id);
+  if (!GEO_REGIONAL_NPCS.includes(id)) return false;
+  if (npcsNear(lat, lon, radius).some(npc => npc.def === id)) return true;
+  for (const cell of nearbyCells(lat, lon, radius)) {
+    const npc = fallbackNpc(cell);
+    if (npc?.def === id && haversine(lat, lon, npc.lat, npc.lon) <= radius) return true;
+  }
+  return false;
 }
 /** Selbst geschriebene Zonen (Städte) behalten ihre Levelvorgabe */
 function authoredLevel(lat: number, lon: number) {
@@ -75,16 +89,38 @@ function authoredLevel(lat: number, lon: number) {
   return anchor.distance <= anchor.radius + 1800 ? LOCS[anchor.id].lvl[0] : undefined;
 }
 
+// Keep the established procedural world usable while terrain is unavailable. Never fill a known water tile.
+function offlineCell(cell: Cell, id: string, seed: number, level: number, bucket: number, keep: (object: GeoObj) => void) {
+  const roll = rng(hash32(id + ':' + bucket));
+  for (let slot = 0; slot < 4; slot++) {
+    const y = .25 + Math.floor(slot / 2) * .5 + (roll() - .5) * .09;
+    const x = .25 + (slot % 2) * .5 + (roll() - .5) * .09;
+    const [lat, lon] = cellPoint(cell, y, x);
+    const mob = pickMob('normal', Math.max(1, level + Math.floor(roll() * 3) - 1), seed + slot);
+    if (terrainAt(lat, lon) === undefined) keep(mobObject(mob, lat, lon, `m:${id}:${slot}:${bucket}`));
+  }
+  if (seed % 4 === 0) {
+    const kinds = ['ore', 'herb', 'wood'];
+    const def = 'n_' + kinds[hash32('node:' + id) % kinds.length] + '_' + Math.min(9, Math.floor(level / 10));
+    const [lat, lon] = cellPoint(cell, .24, .22);
+    if (terrainAt(lat, lon) === undefined) keep({ id: `n:${id}:${bucket}`, k: 'node', def, lat, lon, name: NODES[def].name });
+  }
+  if (seed % 13 === 0) {
+    const [lat, lon] = cellPoint(cell, .73, .74);
+    if (terrainAt(lat, lon) === undefined) keep(mobObject(pickMob('elite', level + 4, seed), lat, lon, `e:${id}:${bucket}`));
+  }
+}
+
 export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now()): GeoObj[] {
   const out: GeoObj[] = [];
   const normals: GeoObj[] = [];
   const keep = (object: GeoObj, distance = radius) => {
     if ((G.geoTaken.get(object.id) || 0) > t || haversine(lat, lon, object.lat, object.lon) > distance) return;
+    if (object.role === 'boss') object = { ...object, extra: { ...object.extra, endsAt: (Math.floor(t / 36e5) + 1) * 36e5 } };
     (object.role === 'normal' ? normals : out).push(object);
   };
   const byDistance = (a: GeoObj, b: GeoObj) => haversine(lat, lon, a.lat, a.lon) - haversine(lat, lon, b.lat, b.lon);
   const bucket = Math.floor(t / GEO.spawnBucketMs);
-  const hour = Math.floor(t / 36e5);
   for (const o of STATIC) keep(o);
   for (const territory of territoryObjects()) keep(territory);
   for (const cell of nearbyCells(lat, lon, radius)) {
@@ -93,12 +129,19 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
     const [clat, clon] = cellPoint(cell, .5, .5);
     if (haversine(lat, lon, clat, clon) > radius + 210) continue;
     populateCell(cell, (uy, ux) => cellPoint(cell, uy, ux), { authoredLevel, keep: object => keep(object) });
-    if (wrap(cell.row, 4) === 0 && cell.column % 4 === 0 && (Math.floor(t / 60000) + seed % 60) % 60 < 20) {
+    if (terrainAt(clat, clon) === undefined) offlineCell(cell, id, seed, authoredLevel(clat, clon) ?? 1 + seed % 4, bucket, keep);
+    const offlineNpc = fallbackNpc(cell);
+    if (offlineNpc) keep(offlineNpc);
+    const minute = Math.floor(t / 60000);
+    const stormOffset = minute + seed % 60;
+    const stormMinute = stormOffset % 60;
+    if (wrap(cell.row, 4) === 0 && cell.column % 4 === 0 && stormMinute < 20) {
       const [eventLat, eventLon] = cellPoint(cell, .44, .58);
-      if (terrainAt(eventLat, eventLon) !== 1) {
+      const terrain = terrainAt(eventLat, eventLon);
+      if (terrain !== T.water) {
         const invader = pickMob('elite', (authoredLevel(eventLat, eventLon) ?? regionAt(eventLat, eventLon)?.lvl[0] ?? 1) + 2, hash32('storm:' + id));
-        keep({ ...mobObject(invader, eventLat, eventLon, `storm:${id}:${Math.floor((t + (seed % 60) * 60000) / 36e5)}`),
-          name: 'Äthersturm · ' + invader.name, extra: { regionalEvent: 'aetherstorm' } });
+        keep({ ...mobObject(invader, eventLat, eventLon, `storm:${id}:${Math.floor(stormOffset / 60)}`),
+          name: 'Äthersturm · ' + invader.name, extra: { regionalEvent: 'aetherstorm', endsAt: (minute + 20 - stormMinute) * 60000 } });
       }
     }
     if (seed % 101 === 0) {
@@ -113,10 +156,9 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
   }
   const properties = new Map(propertyObjects(lat, lon, radius).map(item => [item.id, item]));
   for (const house of G.houses.values()) {
-    const owned = house.propertyId && G.chars.get(house.ownerId)?.geoProperty;
+    const owned = house.propertyId && !house.rentalInterior && G.chars.get(house.ownerId)?.geoProperty;
     if (owned && owned.id === house.propertyId) {
-      const { id, lat, lon } = owned.building;
-      properties.set(id, { id, k: 'house', def: 'property', lat, lon, name: 'Immobilie', extra: { source: 'OpenStreetMap', building: owned.building.building } });
+      properties.set(owned.id, propertyMarker(owned.building));
     }
     const position = house.geo;
     if (position) keep({ id: 'h:' + house.id, k: 'house', def: house.kind, ...position, name: `${house.kind === 'guild' ? 'Gildenhaus' : 'Haus'} ${house.ownerName}` });

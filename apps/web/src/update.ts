@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { state } from './store';
+import { net } from './net';
 
 /**
  * Automatisches Web-Update: vergleicht die eingebettete Build-ID mit der veröffentlichten `version.json`
@@ -21,7 +22,8 @@ let running = false, retryTimer: number | undefined, safeTimer: number | undefin
 const url = (file: string) => new URL(file, document.baseURI).href;
 
 /** Kampf, Szene, Handel, Reise, Tod oder Dialog: Neuladen wird vorgemerkt. */
-export const critical = () => !!(state.inScene || state.trade || state.travel || state.died || state.dialog || state.conn === 'connecting');
+export const critical = () => !['title', 'chars', 'bye'].includes(state.screen) ||
+  state.conn === 'connecting' || net.pend.size > 0;
 
 async function remoteBuild(): Promise<string> {
   const response = await fetch(url('version.json') + '?t=' + Date.now(), { cache: 'no-store', headers: { 'cache-control': 'no-cache' } });
@@ -32,11 +34,13 @@ async function remoteBuild(): Promise<string> {
 }
 
 /** Prüft, dass die neue Startseite und ihre Hauptdatei erreichbar sind (CDN-Verzögerung / fehlende Chunks). */
-async function remoteComplete(): Promise<boolean> {
+async function remoteComplete(expected: string): Promise<boolean> {
   const page = await fetch(url('./') + '?t=' + Date.now(), { cache: 'no-store' });
   if (!page.ok) return false;
-  const html = await page.text();
-  const entries = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map(m => m[1]);
+  const html = new DOMParser().parseFromString(await page.text(), 'text/html');
+  if (html.querySelector('meta[name="nam-build"]')?.getAttribute('content') !== expected) return false;
+  const entries = Array.from(html.querySelectorAll('script[type="module"][src], link[rel="stylesheet"][href]'), node =>
+    node.getAttribute('src') ?? node.getAttribute('href') ?? '');
   if (!entries.length) return false;
   const checks = await Promise.all(entries.slice(0, 4).map(async file => (await fetch(new URL(file, page.url).href, { cache: 'no-store', method: 'HEAD' })).ok));
   return checks.every(Boolean);
@@ -46,6 +50,21 @@ async function ensureWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   const registration = await navigator.serviceWorker.getRegistration();
   if (registration) await registration.update().catch(() => undefined);
+}
+
+async function activateWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!registration?.waiting) return;
+  await new Promise<void>(resolve => {
+    const changed = () => { window.clearTimeout(timer); resolve(); };
+    const timer = window.setTimeout(() => {
+      navigator.serviceWorker.removeEventListener('controllerchange', changed);
+      resolve();
+    }, 1500);
+    navigator.serviceWorker.addEventListener('controllerchange', changed, { once: true });
+    registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+  });
 }
 
 function guardState(): { id: string; n: number; at: number } | null {
@@ -60,16 +79,24 @@ async function install(remote: string) {
     return;
   }
   if (critical()) {
-    set({ status: 'pending', message: 'Neue Version bereit – wird nach dem laufenden Vorgang installiert.' });
+    set({ status: 'pending', message: 'Neue Version bereit. Sie wird in der Charakterauswahl oder am Titelbildschirm geladen.' });
     window.clearInterval(safeTimer);
-    safeTimer = window.setInterval(() => { if (!critical()) { window.clearInterval(safeTimer); void install(remote); } }, 2000);
+    safeTimer = window.setInterval(() => {
+      if (critical() || running) return;
+      window.clearInterval(safeTimer);
+      void checkNow();
+    }, 2000);
     return;
   }
   const wait = attempts ? 5000 * 2 ** attempts : 0;
   set({ status: 'reloading', message: wait ? `Neue Version wird geladen (Versuch ${attempts + 1}) …` : 'Neue Version wird geladen …' });
-  try { sessionStorage.setItem(GUARD, JSON.stringify({ id: remote, n: attempts + 1, at: Date.now() })); } catch { /* ohne Schutz: nur ein Versuch pro Seitenaufruf */ }
-  await new Promise(r => setTimeout(r, 800 + wait)); // laufende Speicherungen abschließen lassen
-  if (critical()) { void install(remote); return; }
+  if (wait) await new Promise(r => setTimeout(r, wait));
+  if (critical()) return install(remote);
+  await net.closeSolo();
+  if (critical()) return install(remote);
+  await activateWorker();
+  if (critical()) return install(remote);
+  try { sessionStorage.setItem(GUARD, JSON.stringify({ id: remote, n: attempts + 1, at: Date.now() })); } catch { /* Session-Speicher ist im privaten Modus optional. */ }
   location.reload();
 }
 
@@ -83,14 +110,14 @@ export async function checkNow(manual = false): Promise<void> {
     const remote = await remoteBuild();
     set({ lastCheck: Date.now(), remote });
     if (remote === BUILD.buildId) {
+      window.clearInterval(safeTimer);
       try { sessionStorage.removeItem(GUARD); } catch { /* egal */ }
       set({ status: 'current', message: 'Du spielst die aktuelle Version.' });
       return;
     }
     set({ status: 'preparing', message: 'Neue Version gefunden – wird bereitgestellt …' });
     await ensureWorker();
-    if (!(await remoteComplete())) throw new Error('unvollständig');
-    running = false;
+    if (!(await remoteComplete(remote))) throw new Error('unvollständig');
     await install(remote);
   } catch (error) {
     const offline = (error as { offline?: boolean }).offline || navigator.onLine === false;

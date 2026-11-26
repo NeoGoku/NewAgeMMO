@@ -12,7 +12,7 @@ export type Terrain = typeof T[keyof typeof T];
 export const Z = 14;
 const N = 64;
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
-const MAX_TILES = 90, RETRY_MS = 3 * 60e3, JSON_TTL_MS = 3600e3, TIMEOUT_MS = 12_000;
+const MAX_TILES = 90, MAX_PENDING = 6, MAX_TILE_BYTES = 2_000_000, RETRY_MS = 3 * 60e3, JSON_TTL_MS = 3600e3, TIMEOUT_MS = 12_000;
 
 export interface TerrainPoi { lat: number; lon: number; cls: string; sub: string; name: string; rank: number }
 export interface TerrainTile {
@@ -22,6 +22,9 @@ export interface TerrainTile {
 const tiles = new Map<string, TerrainTile>();
 const pending = new Map<string, Promise<TerrainTile>>();
 let template: { url: string; at: number } | undefined;
+let terrainEnabled = true;
+export const configureTerrain = (enabled: boolean) => { terrainEnabled = enabled; };
+let templateRequest: Promise<string> | undefined;
 
 export const tileXY = (lat: number, lon: number) => {
   const n = 2 ** Z;
@@ -34,16 +37,17 @@ const lonAt = (x: number) => x / 2 ** Z * 360 - 180;
 const latAt = (y: number) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** Z))) * 180 / Math.PI;
 export const tileBounds = (x: number, y: number) => ({ west: lonAt(x), east: lonAt(x + 1), north: latAt(y), south: latAt(y + 1) });
 
-async function tileUrl() {
-  if (!template || Date.now() - template.at > JSON_TTL_MS) {
+function tileUrl(): Promise<string> {
+  if (template && Date.now() - template.at <= JSON_TTL_MS) return Promise.resolve(template.url);
+  return templateRequest ??= (async () => {
     const response = await fetch(TILEJSON, { signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!response.ok) throw new Error('tilejson ' + response.status);
     const json = await response.json() as { tiles?: string[] };
     const url = json.tiles?.[0];
     if (!url || !/^https:\/\/tiles\.openfreemap\.org\//.test(url)) throw new Error('tilejson ungültig');
     template = { url, at: Date.now() };
-  }
-  return template.url;
+    return url;
+  })().finally(() => { templateRequest = undefined; });
 }
 
 type Ring = { x: number; y: number }[];
@@ -131,7 +135,10 @@ function loadTile(x: number, y: number): Promise<TerrainTile> {
       const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       if (response.status === 404 || response.status === 204) return { x, y, grid: new Uint8Array(N * N), pois: [], places: [], buildings: 0, shares: [1], at: Date.now() } as TerrainTile;
       if (!response.ok) throw new Error('tile ' + response.status);
-      return decode(x, y, await response.arrayBuffer());
+      if (Number(response.headers.get('content-length')) > MAX_TILE_BYTES) throw new Error('Kachel zu groß');
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > MAX_TILE_BYTES) throw new Error('Kachel zu groß');
+      return decode(x, y, buffer);
     } catch {
       return { x, y, grid: new Uint8Array(N * N), pois: [], places: [], buildings: 0, shares: [1], failed: true, at: Date.now() } as TerrainTile;
     }
@@ -153,12 +160,20 @@ export const getTile = (x: number, y: number) => {
 
 /** Lädt fehlende Kacheln im Umkreis; liefert ein Promise (true = neue Daten) oder undefined, wenn nichts zu laden ist. */
 export function ensureTerrain(lat: number, lon: number, radiusM: number): Promise<boolean> | undefined {
-  const a = tileXY(lat + radiusM / 111000, lon - radiusM / (111000 * Math.cos(lat * Math.PI / 180)));
-  const b = tileXY(lat - radiusM / 111000, lon + radiusM / (111000 * Math.cos(lat * Math.PI / 180)));
-  const jobs: Promise<TerrainTile>[] = [];
-  for (let y = a.y; y <= b.y; y++) for (let x = a.x; x <= b.x; x++) {
-    if (!getTile(x, y)) jobs.push(loadTile(x, y));
+  if (!terrainEnabled || pending.size >= MAX_PENDING) return;
+  const center = tileXY(lat, lon);
+  const count = 2 ** Z;
+  const lonRadius = radiusM / (111000 * Math.cos(lat * Math.PI / 180));
+  const north = tileXY(lat + radiusM / 111000, lon).y;
+  const south = tileXY(lat - radiusM / 111000, lon).y;
+  const depth = Math.min(20, Math.ceil(lonRadius / 360 * count) + 1);
+  const candidates: { x: number; y: number; distance: number }[] = [];
+  for (let y = north; y <= south; y++) for (let dx = -depth; dx <= depth; dx++) {
+    const x = (center.x + dx + count) % count;
+    if (!getTile(x, y) && !pending.has(tileKey(x, y))) candidates.push({ x, y, distance: dx * dx + (y - center.y) ** 2 });
   }
+  const jobs = candidates.sort((a, b) => a.distance - b.distance).slice(0, MAX_PENDING - pending.size)
+    .map(({ x, y }) => loadTile(x, y));
   return jobs.length ? Promise.all(jobs).then(list => list.some(tile => !tile.failed)) : undefined;
 }
 
@@ -166,7 +181,7 @@ export function ensureTerrain(lat: number, lon: number, radiusM: number): Promis
 export function terrainAt(lat: number, lon: number): Terrain | undefined {
   const { x, y } = tileXY(lat, lon);
   const tile = getTile(x, y);
-  if (!tile) return undefined;
+  if (!tile || tile.failed) return undefined;
   const b = tileBounds(x, y);
   const c = Math.min(N - 1, Math.max(0, Math.floor((lon - b.west) / (b.east - b.west) * N)));
   const r = Math.min(N - 1, Math.max(0, Math.floor((b.north - lat) / (b.north - b.south) * N)));
@@ -212,6 +227,6 @@ export function regionOf(x: number, y: number): Region | undefined {
 export const regionAt = (lat: number, lon: number) => { const { x, y } = tileXY(lat, lon); return regionOf(x, y); };
 
 export const terrainTilesLoaded = () => tiles.size;
-export function resetTerrainForTests() { tiles.clear(); pending.clear(); template = undefined; }
+export function resetTerrainForTests() { tiles.clear(); pending.clear(); template = undefined; templateRequest = undefined; }
 /** Test-Hilfe: eine Kachel direkt setzen. */
 export function setTerrainTile(tile: TerrainTile) { tiles.set(tileKey(tile.x, tile.y), tile); }

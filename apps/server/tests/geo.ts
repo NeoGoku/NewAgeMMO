@@ -30,7 +30,7 @@ const router = createServer(async (req, res) => {
 await new Promise<void>(resolve => router.listen(0, '127.0.0.1', resolve));
 const routerAddress = router.address();
 if (!routerAddress || typeof routerAddress === 'string') throw new Error('Keine Test-Routingadresse');
-const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '', VALHALLA_URL: `http://127.0.0.1:${routerAddress.port}` }, stdio: 'ignore' });
+const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '', OSM_TERRAIN_ENABLED: '0', VALHALLA_URL: `http://127.0.0.1:${routerAddress.port}` }, stdio: 'ignore' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0; const ok = (c: any, m: string) => { if (!c) fail++; console.log(c ? '✓ ' + m : (process.env.GITHUB_ACTIONS ? '::error::' : '✗ ') + m); };
 (async () => {
   const { OsmPoints } = await import('../src/geo-osm');
@@ -165,7 +165,6 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(geo.pending, 'Ungenauer GPS-Fix setzt keine Kartenposition');
   r = await req('geoPos', braunschweig);
   ok(r.t === 'ok' && geo.me?.lat === braunschweig.lat && geo.me?.lon === braunschweig.lon && geo.me?.regionLabel === 'Regionale Wildnis', 'Erster GPS-Fix verankert sofort in Braunschweig');
-  for (let i = 0; i < 60 && !(geo.objs.some((o: any) => o.k === 'npc') && geo.objs.some((o: any) => o.k === 'mob' && o.role === 'elite')); i++) await sleep(250); // Gelände wird asynchron geladen
   const localMobs = geo.objs.filter((o: any) => o.k === 'mob' && o.role === 'normal' && o.lvl <= 6 &&
     haversine(o.lat, o.lon, braunschweig.lat, braunschweig.lon) <= 160);
   ok(localMobs.length >= 2, 'Braunschweig hat mehrere Einsteiger-Monster innerhalb von 160 m');

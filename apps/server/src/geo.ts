@@ -1,10 +1,11 @@
+import { propertyMarket } from './geo-property';
 import { publishProgress } from './character-save';
 import { GEO, GEO_STEER_MODES, geoTravelSpeed, R_EARTH, haversine, quant, rad, wrapLon, type GeoCoord, type GeoPosition, type GeoRoutePreview, type GeoSteerMode, type GeoTravelView } from '@nam/shared';
 import { GEO_ANCHORS, GEO_START, LOCS, MOBS, NODES, ITEMS } from '@nam/game-data';
 import { clamp, deferMessages, G, now, send, sys, uid, type GeoState, type House, type Player } from './state';
 import { H, NO_CHAR } from './handlers';
-import { setLocSilent, enterScene, enterPartyDungeon, exitScene, leaveDungeon, teleportTo } from './world';
-import { questEvent, recordRegionalGather, recordRegionalSurvey, recordRegionalVisit } from './quests';
+import { setLocSilent, enterScene, enterPartyDungeon, enterRegionalDungeon, enterGeoChallenge, exitScene, leaveDungeon, teleportTo } from './world';
+import { mapNodeBlocked, questEvent, recordRegionalGather, recordRegionalSurvey, recordRegionalVisit } from './quests';
 import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 import { anchorList, geoObjects } from './geo-world';
@@ -479,14 +480,11 @@ export function pushGeo(p: Player) {
   const terrain = ensureTerrain(g.lat, g.lon, GEO.viewM + 400);
   if (terrain) void terrain.then(changed => { if (changed && p.online && p.geo?.on) pushGeo(p); });
   loadOsmPoints(g.lat, g.lon);
-  const claims = new Map([...G.houses.values()].filter(house => house.propertyId).map(house => [house.propertyId, house.ownerId]));
+  const claims = new Map([...G.houses.values()].filter(house => house.propertyId && !house.rentalInterior)
+    .map(house => [house.propertyId, house]));
   const objs = geoObjects(g.lat, g.lon);
   for (const item of objs) {
-    if (item.def !== 'property') continue;
-    const claimant = claims.get(item.id);
-    const b = item.extra.building;
-    item.extra.marketStatus = claimant === p.id ? (p.c.geoProperty?.rentUntil ? 'rent' : 'own') : claimant ? 'owned' :
-      b === 'virtual_plot' ? 'plot' : ['apartments', 'dormitory', 'commercial', 'retail', 'office'].includes(b) ? 'rentable' : 'sale';
+    if (item.def === 'property') Object.assign(item.extra, propertyMarket(p.c, item.id, item.extra, claims.get(item.id)));
   }
   send(p, { t: 'geo', me: position, objs, players, rev: t, zones: zonesNear(g.lat, g.lon, GEO.viewM + 600) });
 }
@@ -534,6 +532,13 @@ H.geoInteract = (p, m) => {
       const origin = p.loc;
       const scene = findLocWith(o.def);
       if (p.c.level + 15 < mobDef.lvl && mobDef.role !== 'normal') return 'Dieser Gegner ist weit über deiner Stufe';
+      if (o.role === 'boss' || o.extra?.regionalEvent) {
+        const error = enterGeoChallenge(p, o, scene);
+        if (error) return error;
+        g.steer = null;
+        pauseTrip(p, g);
+        return { scene };
+      }
       taken();
       g.steer = null;
       pauseTrip(p, g);
@@ -554,10 +559,8 @@ H.geoInteract = (p, m) => {
     }
     case 'node': {
       const node = NODES[o.def];
-      const profession = p.c.prof[node.prof] ||= { lvl: 1, exp: 0 };
-      if (profession.lvl < node.tier * 10) return `Benötigt Berufslevel ${node.tier * 10}`;
-      const tool = { mining: 'pickaxe', herbalism: 'sickle', woodcutting: 'axe' }[node.prof];
-      if (tool && !p.c.inventory.some(item => ITEMS[item.id].tool === tool && ITEMS[item.id].tier >= node.tier)) return 'Passendes Werkzeug fehlt';
+      const error = mapNodeBlocked(p, node);
+      if (error) return error;
       const quantity = 1 + Math.floor(Math.random() * 3);
       const received = quantity - invAdd(p.c, node.yield, quantity);
       if (!received) return 'Inventar voll';
@@ -574,7 +577,10 @@ H.geoInteract = (p, m) => {
       const l = LOCS[o.def];
       if (p.c.level < l.lvl[0] - 5) return `Empfohlen ab Level ${l.lvl[0]}`;
       if (m.group === true) {
-        const error = enterPartyDungeon(p, o.def);
+        const error = enterPartyDungeon(p, o.def, o.id);
+        if (error) return error;
+      } else if (o.extra?.regional) {
+        const error = enterRegionalDungeon(p, o.def, o.id);
         if (error) return error;
       } else enterScene(p, o.def);
       g.steer = null;

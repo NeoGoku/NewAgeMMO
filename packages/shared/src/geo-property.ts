@@ -6,7 +6,15 @@ export const PROPERTY_BUILDINGS = [...RESIDENTIAL_BUILDINGS, 'commercial', 'reta
 export const supportedPropertyBuilding = (name: unknown): name is typeof PROPERTY_BUILDINGS[number] =>
   PROPERTY_BUILDINGS.some(building => building === name);
 
-export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding; built?: true; /** Mietvertrag: Ablaufzeit (ms); ohne Wert = Eigentum im Spiel */ rentUntil?: number }
+export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding; built?: true; /** Mietvertrag: Ablaufzeit (ms); ohne Wert = Eigentum im Spiel */ rentUntil?: number; rentalListed?: true }
+export interface GeoPropertyLease {
+  ownerId: string;
+  propertyId: string;
+  houseId: string;
+  weeklyGold: number;
+  until: number;
+}
+export type GeoPropertyMarketStatus = 'sale' | 'rentable' | 'rent' | 'own' | 'owned' | 'plot';
 export const PROPERTY_RENT_DAYS = 7;
 /** Spielinterne Wochenmiete (keine realen Eigentums- oder Mietrechte) */
 export const propertyRentGold = (buyGold: number) => Math.max(100, Math.round(buyGold * .05 / 10) * 10);
@@ -37,6 +45,9 @@ export interface GeoPropertyBuilding {
 export interface GeoPropertyOffer extends Omit<GeoPropertyBuilding, 'footprint'> {
   footprint?: GeoPropertyFootprint;
   status: 'available' | 'owned' | 'mine';
+  marketStatus: GeoPropertyMarketStatus;
+  areaM2: number;
+  rentalManagement?: { listed: boolean; weeklyGold: number; until?: number; tenantName?: string };
   sellGold?: number;
   /** Wochenmiete in Gold (nicht für Baugrundstücke) */
   rentGold?: number;
@@ -83,6 +94,12 @@ export function validPropertyFootprint(value: unknown): value is GeoPropertyFoot
   return north - south <= .03 && east - west <= .15;
 }
 
+export function validPropertyLease(value: unknown): value is GeoPropertyLease {
+  const localId = (id: unknown) => typeof id === 'string' && /^[a-z][a-z0-9]+$/.test(id);
+  return record(value) && localId(value.ownerId) && localId(value.houseId) && validPropertyId(value.propertyId) &&
+    positiveInt(value.weeklyGold) && positiveInt(value.until);
+}
+
 export function validPropertyOwnership(value: unknown): value is GeoPropertyOwnership {
   if (!record(value) || !validPropertyId(value.id) || !positiveInt(value.purchaseGold) || !record(value.building)) return false;
   const building = value.building;
@@ -92,7 +109,8 @@ export function validPropertyOwnership(value: unknown): value is GeoPropertyOwne
     building.floorAreaM2 === (building.footprintM2 as number) * building.levels;
   if (building.unitAreaM2 !== undefined && (building.building !== 'apartments' ||
     !positiveInt(building.unitAreaM2) || typeof building.floorAreaM2 !== 'number' || building.unitAreaM2 > building.floorAreaM2)) return false;
-  return (value.rentUntil === undefined || (positiveInt(value.rentUntil) && !plot)) && (value.built === undefined || (value.built === true && plot)) && building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
+  return (value.rentalListed === undefined || (value.rentalListed === true && !plot && value.rentUntil === undefined)) &&
+    (value.rentUntil === undefined || (positiveInt(value.rentUntil) && !plot)) && (value.built === undefined || (value.built === true && plot)) && building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
     positiveInt(building.footprintM2) && validArea &&
     typeof building.levelsEstimated === 'boolean' && building.buyGold === value.purchaseGold &&
     validPosition(building.lon, building.lat) && validPropertyFootprint(building.footprint);

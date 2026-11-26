@@ -1,17 +1,7 @@
-# Übergabe: World Expansion (unvollständig, Stand der Unterbrechung)
+# Übergabe: World Expansion
 
-## Fertig und im Commit
-- Zentrierungsbutton zoomt auf 17–18 (GeoScreen `onRecenter`).
-- Luftbilder: LGLN plus Thüringen, Hessen, Rheinland-Pfalz, Schleswig-Holstein, Mecklenburg-Vorpommern (`AERIAL_SOURCES` in `map-style.ts`, transparente Kacheln). Nicht eingebunden, da Lizenz nicht bestätigt: NRW, Sachsen, Sachsen-Anhalt.
-- Geländemodell aus OpenFreeMap-Vektorkacheln (`apps/server/src/geo-terrain.ts`), neue Spawns, NPCs an OSM-POIs, Ressourcen, regionale Dungeons/Weltboss, Stufengebiete (`geo-spawn.ts`, `geo-world.ts`).
-- Gebietsgrenzen-Overlay und HUD-Zeile im Client (Schalter in der Kartenlegende).
-- Neue Ressourcenknoten (Fisch, Schrott, Kristall, Äther) und Item `m_fish`.
-- `tests/geo.ts` lief nach den Spawn-Änderungen grün.
-
-## Unvollständig / ungeprüft
-- Immobilien-Kartenfilter: `PROPERTY_FILTERS`/`propertyPasses` in `map-markers.ts` und neue Statusfarben sind angelegt, aber NICHT in `GeoScreen.tsx` verdrahtet (Filter-UI, Preis/Größe, Anwendung beim Markerzeichnen). Web-Typecheck nach diesen Änderungen nicht ausgeführt.
-- Eigene Immobilien zur Vermietung anbieten: nicht umgesetzt.
-- Gebietsquests, Weltboss-Mechaniken und Events: nicht umgesetzt (nur Platzierung).
-- Mobile-Optimierung/Safe-Area: nicht geprüft.
-- Nicht ausgeführt: `npm run typecheck`, `npm test` (gesamt), `npm run build`. Tests, die `PROPERTY_MARKER_STATUSES` prüfen (`apps/web/tests/markers.ts`), sind eventuell anzupassen.
-- Bekannt: ALKIS/Open-Data-Quellen nicht geprüft.
+- PR #3 setzt auf Claudes Gelände-, Spawn-, Luftbild- und Gebietskartenarbeit auf. Der Solo-Katalog enthält 1.617 OSM-Objekte einschließlich vier virtueller Grundstücke. Nordstadt und Bebelhof wurden ergänzt.
+- Die Immobilienfilter werden von Karte, Clustern und Markt gemeinsam verwendet. Geografische Vermietung verwendet serverseitige Angebote, verlängerbare Verträge und getrennte Mieträume. Goldabbuchung und Vermieterpost werden in einem atomaren Speicherschritt geschrieben. Beim Vertragsende müssen Mieträume leer und verlassen sein.
+- Gebietsquests, Ätherstürme und Weltbossbegegnungen verwenden Kartenposition und serverseitige Teilnahme. Belohnungen werden dauerhaft verbucht. Bestehende Gruppeninstanzen verwenden den jeweiligen Eingang. Vorläufige prozedurale Inhalte halten den Solo-Modus ohne Geländedaten spielbar und weichen bei bekannten Geodaten den Geländeregeln.
+- Die mobile Bedienung berücksichtigt kurze Viewports und Safe Areas. Die Zentrierung hebt starkes Herauszoomen auf den Gameplay-Zoom an. Update-Installation wartet auf sichere Ansicht, gespeicherten Solo-Stand und übereinstimmende Build-ID von HTML und Manifest.
+- NRW und Sachsen-Anhalt wurden mit realem WMS-PNG und den Origins für Pages und Android geprüft. Sachsen bleibt wegen nicht verwendbarer GetCapabilities offen. Amtliche ALKIS-Flurstücke warten auf die produktspezifische Lizenzprüfung des WFS. Android-Signierung, Geräteabnahme und weiterer Ausbau der Gildenkämpfe bleiben offen. Öffentliches Multiplayer- und Valhalla-Hosting sind zurückgestellt.

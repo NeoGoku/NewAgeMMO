@@ -1,7 +1,7 @@
 import { registerGuildTerritories, restoreTerritories, saveTerritoryChanges, tickTerritories } from './guild-territories';
-import { pendingReward, saveCharacter } from './character-save';
+import { pendingCharacterTransaction, pendingReward, saveCharacter } from './character-save';
 import { configureProperties } from './geo-property-data';
-import { discardPropertyHouse, restorePropertyHouses } from './geo-property';
+import { discardPropertyHouse, mustResolvePropertyLease, restorePropertyHouses, tickPropertyRentals } from './geo-property';
 import { createAdmin } from './admin';
 import { WriteOrder } from './write-order';
 import { NAME_RE, CLASS_IDS, BAL, GEO, derive, type Look, type ClassId } from '@nam/shared';
@@ -108,6 +108,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
         if (!c || c.accountId !== conn.acc!.id) return R('Nicht gefunden');
         if (G.players.has(c.id)) return R('Charakter ist online');
         if (m.confirm !== c.name) return R('Name zur Bestätigung eingeben');
+        if (pendingCharacterTransaction(c.id) || mustResolvePropertyLease(c)) return R('Beende zuerst den laufenden Mietvertrag');
         G.chars.delete(c.id);
         try {
           await G.store.del('chars', c.id);
@@ -144,6 +145,9 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
       }
     }
     const p = conn.p; if (!p?.online || G.players.get(p.id) !== p || p.ws !== ws) return R('Kein Charakter aktiv'); p.lastAct = now();
+    let transaction: Promise<void> | undefined;
+    while ((transaction = pendingCharacterTransaction(p.id))) await transaction;
+    if (!p.online || G.players.get(p.id) !== p || ws.readyState !== 1) return R('Kein Charakter aktiv');
     if (m.t === 'chat' && admin?.isMuted(p.acc)) return R('Der Chat wurde für deinen Account gesperrt.');
     const h = H[m.t]; if (!h) return R('Unbekannter Befehl: ' + m.t); let res: any; try { res = await h(p, m, receivedAt); } catch (e: any) { log('handler_error', { t: m.t, e: String(e?.stack || e).slice(0, 300) }); return R('Serverfehler'); }
     const saving = pendingReward(p);
@@ -170,7 +174,7 @@ export async function createCore(store: Store, opts: { backupEveryMs?: number; p
       }
       for (const [id, party] of G.parties) if (party.members.length < 2) G.parties.delete(id);
     }, 15000),
-    setInterval(() => { marketExpire(); guildWarCheck(); }, 30000),
+    setInterval(() => { marketExpire(); guildWarCheck(); tickPropertyRentals(); }, 30000),
     setInterval(() => { try { worldEvent(); } catch { /* */ } }, 25 * 60e3),
     setInterval(() => { void G.store.flush().catch(e => log('flush_error', { msg: String(e) })); }, 5000),
     setInterval(() => { void G.store.backup().then(d => log('backup', { d }), e => log('backup_error', { msg: String(e) })); }, 6 * 3600e3)
