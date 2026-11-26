@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { PROPERTY_SOURCE, RESIDENTIAL_BUILDINGS, validPropertyFootprint } from '@nam/shared';
+import { PROPERTY_SOURCE, PROPERTY_BUILDINGS, RESIDENTIAL_BUILDINGS, validPropertyFootprint } from '@nam/shared';
 import { PropertyCatalog, PROPERTY_CATALOG_MAX_BYTES } from '../apps/server/src/geo-property-data';
 import { readPropertyCatalogResponse } from '../apps/server/src/property-catalog-response';
 
@@ -11,6 +11,7 @@ if (!output || process.argv.length !== 3) {
 const slices = {
   Innenstadt: [52.263, 10.516, 52.274, 10.535],
   Weststadt: [52.240, 10.466, 52.254, 10.490],
+  ÖstlichesRinggebiet: [52.264, 10.536, 52.290, 10.557],
   Heidberg: [52.224, 10.521, 52.240, 10.542],
 } as const;
 const districtLimit = 330;
@@ -31,7 +32,7 @@ async function readOverpass() {
   const endpoint = new URL(process.env.OSM_OVERPASS_URL || 'https://overpass-api.de/api/interpreter');
   if (endpoint.protocol !== 'https:') throw new Error('Der Overpass-Endpunkt muss HTTPS verwenden');
   const importSource = endpoint.origin + endpoint.pathname;
-  const residential = RESIDENTIAL_BUILDINGS.join('|');
+  const residential = PROPERTY_BUILDINGS.join('|');
   const districts = Object.entries(slices).map(([district, bbox]) =>
     `way["building"~"^(${residential})$"](${bbox.join(',')})->.${district};.${district} out geom ${districtLimit};`).join('');
   endpoint.searchParams.set('data', '[out:json][timeout:25][maxsize:16777216];' + districts);
@@ -93,6 +94,8 @@ async function readGeofabrik(filename: string) {
     return [{ item, lat, lon }];
   });
   const features = Object.values(slices).flatMap(bbox => candidates.filter(({ lat, lon }) => inside(bbox, lat, lon))
+    .sort((a, b) => Number(RESIDENTIAL_BUILDINGS.some(id => a.item.properties.building === id)) -
+      Number(RESIDENTIAL_BUILDINGS.some(id => b.item.properties.building === id)))
     .slice(0, districtLimit).map(({ item }) => item));
   return { features, osmSnapshot: process.env.OSM_EXTRACT_SNAPSHOT, importSource: 'https://download.geofabrik.de/europe/germany/niedersachsen.html' };
 }

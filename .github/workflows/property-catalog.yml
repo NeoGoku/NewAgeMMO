@@ -1,4 +1,4 @@
-name: OSM-Immobilienkatalog Braunschweig
+name: OSM-Katalog und Gehwegenetz Braunschweig
 on:
   workflow_dispatch: {}
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/property-catalog.yml
       - scripts/import-osm-properties.ts
+      - scripts/import-walking-network.mjs
 permissions: { contents: write }
 concurrency: { group: braunschweig-property-catalog, cancel-in-progress: false }
 jobs:
@@ -24,24 +25,38 @@ jobs:
           curl --fail --silent --show-error --location --retry 2 --max-time 240 \
             https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf \
             --output "$RUNNER_TEMP/niedersachsen.osm.pbf"
-      - name: Gebäude für Braunschweig extrahieren und verifizieren
+      - name: Gebäude und Gehwegenetz für Braunschweig extrahieren
         timeout-minutes: 3
         shell: bash
         run: |
           trap 'echo "::error::Geofabrik-Import fehlgeschlagen (Zeile $LINENO)."' ERR
           snapshot="$(osmium fileinfo -g header.option.osmosis_replication_timestamp "$RUNNER_TEMP/niedersachsen.osm.pbf")"
-          osmium extract --strategy=complete_ways --bbox=10.455,52.22,10.57,52.297 \
+          osmium extract --strategy=complete_ways --bbox=10.40,52.18,10.68,52.38 \
             --output="$RUNNER_TEMP/braunschweig.osm.pbf" "$RUNNER_TEMP/niedersachsen.osm.pbf"
-          buildings="$(npx --no-install tsx --eval "import { RESIDENTIAL_BUILDINGS } from '@nam/shared'; console.log(RESIDENTIAL_BUILDINGS.join(','))")"
+          buildings="$(npx --no-install tsx --eval "import { PROPERTY_BUILDINGS } from '@nam/shared'; console.log(PROPERTY_BUILDINGS.join(','))")"
           osmium tags-filter --output="$RUNNER_TEMP/residential.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" "w/building=$buildings"
           osmium export --geometry-types=polygon --attributes=type,id --output-format=geojson \
             --output="$RUNNER_TEMP/residential.geojson" "$RUNNER_TEMP/residential.osm.pbf"
           OSM_EXTRACT_GEOJSON="$RUNNER_TEMP/residential.geojson" OSM_EXTRACT_SNAPSHOT="$snapshot" \
             npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson"
+          osmium tags-filter --output="$RUNNER_TEMP/walking.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" 'w/highway'
+          osmium cat -f opl --output="$RUNNER_TEMP/walking.opl" "$RUNNER_TEMP/walking.osm.pbf"
+          node scripts/import-walking-network.mjs "$RUNNER_TEMP/walking.opl" "$RUNNER_TEMP/braunschweig-walking.json" "$snapshot"
+      - name: Öffentliche Satellitenkachel prüfen
+        continue-on-error: true
+        run: |
+          bbox=1171975,6844000,1174430,6846455
+          curl -fsS --max-time 16 -H 'Origin: https://neogoku.github.io' -D "$RUNNER_TEMP/satellite-headers" \
+            "https://tiles.maps.eox.at/wms?service=WMS&version=1.1.1&request=GetMap&layers=s2cloudless-2024_3857&styles=&format=image/jpeg&srs=EPSG:3857&width=256&height=256&bbox=$bbox" \
+            -o "$RUNNER_TEMP/satellite.jpg"
+          grep -Ei '^access-control-allow-origin: (\*|https://neogoku.github.io)' "$RUNNER_TEMP/satellite-headers"
+          file "$RUNNER_TEMP/satellite.jpg" | grep 'JPEG image data'
       - uses: actions/upload-artifact@v4
         with:
-          name: braunschweig-property-catalog
-          path: ${{ runner.temp }}/braunschweig.geojson
+          name: braunschweig-osm-assets
+          path: |
+            ${{ runner.temp }}/braunschweig.geojson
+            ${{ runner.temp }}/braunschweig-walking.json
           if-no-files-found: error
           retention-days: 30
       - name: Verifizierten Katalog als Git-Snapshot bereitstellen
@@ -57,9 +72,10 @@ jobs:
             git switch --orphan "$OSM_SNAPSHOT_BRANCH"
           fi
           cp "$RUNNER_TEMP/braunschweig.geojson" braunschweig.geojson
-          git add -- braunschweig.geojson
+          cp "$RUNNER_TEMP/braunschweig-walking.json" braunschweig-walking.json
+          git add -- braunschweig.geojson braunschweig-walking.json
           if ! git diff --cached --quiet; then
             git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -m "Import verified Braunschweig OpenStreetMap catalog"
+              commit -m "Import verified Braunschweig OSM buildings and walking network"
             git push origin "HEAD:$target"
           fi
