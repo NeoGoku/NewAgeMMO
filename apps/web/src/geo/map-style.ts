@@ -41,6 +41,11 @@ const vector = {
   url: 'https://tiles.openfreemap.org/planet',
   attribution: '<a href="https://openfreemap.org/">OpenFreeMap</a> <a href="https://www.openmaptiles.org/">© OpenMapTiles</a> · ' + osmAttribution
 };
+/** Amtliche Orthofotos Niedersachsen (LGLN DOP20, 20 cm Bodenauflösung, CC BY 4.0). WMS in EPSG:3857, CORS offen, nur innerhalb der Abdeckung abgefragt. */
+export const DOP_BOUNDS: [number, number, number, number] = [6.505772, 51.153098, 11.754046, 54.148101];
+export const dopCovers = (lon: number, lat: number) => lon >= DOP_BOUNDS[0] && lon <= DOP_BOUNDS[2] && lat >= DOP_BOUNDS[1] && lat <= DOP_BOUNDS[3];
+const dopTile = 'https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=ni_dop20&STYLES=&FORMAT=image/jpeg&SRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}';
+const dopAttribution = '<a href="https://www.lgln.niedersachsen.de/startseite/geodaten_karten/digitale_orthophotos">Luftbilder © LGLN (DOP20)</a>, <a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>';
 const imageryTile = 'https://tiles.maps.eox.at/wms?service=WMS&version=1.1.1&request=GetMap' +
   '&layers=s2cloudless-2024_3857&styles=&format=image/jpeg&srs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}';
 export interface MapPreferences {
@@ -99,6 +104,7 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
         tiles: [new URL(publicAsset('satellite-overview.jpg'), typeof location === 'undefined' ? 'http://localhost/' : location.href).href],
         attribution: '<a href="https://worldview.earthdata.nasa.gov/">NASA Worldview · Blue Marble</a>'
       },
+      'satellite-dop': { type: 'raster', tileSize: 256, minzoom: 11, maxzoom: 19, bounds: DOP_BOUNDS, tiles: [dopTile], attribution: dopAttribution },
       satellite: {
         type: 'raster', tileSize: 256, maxzoom: 15,
         tiles: [imageryTile],
@@ -113,8 +119,11 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
         paint: { 'raster-brightness-max': brightness } },
       { id: 'satellite-street-fallback', type: 'raster', source: 'osm', minzoom: 8,
         layout: { visibility: visible(satellite) }, paint: { 'raster-brightness-max': brightness } },
-      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: visible(satellite) },
-        paint: { 'raster-brightness-max': brightness } }
+      // Sentinel-2 (10 m) nur als regionale Übersicht; darüber hinaus nie hochskaliert anzeigen
+      { id: 'satellite', type: 'raster', source: 'satellite', maxzoom: 14, layout: { visibility: visible(satellite) },
+        paint: { 'raster-brightness-max': brightness } },
+      { id: 'satellite-dop', type: 'raster', source: 'satellite-dop', minzoom: 11, layout: { visibility: visible(satellite) },
+        paint: { 'raster-brightness-max': brightness, 'raster-resampling': 'linear', 'raster-fade-duration': 150 } }
     ]
   };
 }
@@ -160,8 +169,8 @@ export function applyMapPreferences(map: LibreMap, preferences: MapPreferences) 
   const brightness = preferences.brightness / 100;
   const before = map.getLayer('cities-fill') ? 'cities-fill' : undefined;
   map.setLayoutProperty('osm', 'visibility', visible(standard(preferences)));
-  for (const id of ['satellite-overview', 'satellite-street-fallback', 'satellite']) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
-  for (const id of ['osm', 'satellite-overview', 'satellite-street-fallback', 'satellite']) map.setPaintProperty(id, 'raster-brightness-max', brightness);
+  for (const id of ['satellite-overview', 'satellite-street-fallback', 'satellite', 'satellite-dop']) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
+  for (const id of ['osm', 'satellite-overview', 'satellite-street-fallback', 'satellite', 'satellite-dop']) map.setPaintProperty(id, 'raster-brightness-max', brightness);
   map.setPaintProperty('bg', 'background-color', def && preferences.kind !== 'satellite' ? tone(def.background, brightness) : '#172834');
 
   if ((def || preferences.kind === 'buildings') && !map.getSource('openmap')) {

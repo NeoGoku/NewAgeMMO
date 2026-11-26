@@ -8,7 +8,7 @@ import { mobIconUrl, portraitUrl } from '../render';
 import { RoutePlanner, TravelStatus, type RouteLine, type RouteTarget } from './RoutePlanner';
 import { MapDesignMenu } from './MapDesignMenu';
 import { Joystick } from './Joystick';
-import { applyMapPreferences, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
+import { applyMapPreferences, dopCovers, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
 import { distanceLabel, pinLabels, questPins, type QuestPinRole } from './quest-map';
 import { clusterMarkers, drawMarkerIcon, MARKER_CATEGORIES, markerCategories, PROPERTY_MARKER_STATUSES, propertyMarkerStatus, propertyMarkerType, type MarkerCategory } from './map-markers';
 import { geoBus } from './bus';
@@ -158,6 +158,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const [clusterSelection, setClusterSelection] = useState<MarkerTarget[]>([]);
   blockedRef.current ||= mapSettings || markerLegend;
   const [mapError, setMapError] = useState('');
+  const [imageryNote, setImageryNote] = useState(false);
   const [questTrack, setQuestTrack] = useState<{ id: string; role: QuestPinRole; navigate: boolean } | null>(null);
   const questStates = useS(s => s.char?.quests);
   const conn = useS(s => s.conn);
@@ -230,15 +231,18 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       redraw.current();
     });
     map.on('error', event => {
-      if ('sourceId' in event && event.sourceId === 'satellite') {
-        setMapError('Satellitendetails teilweise nicht verfügbar.');
+      if ('sourceId' in event && (event.sourceId === 'satellite' || event.sourceId === 'satellite-dop')) {
+        setMapError('Luftbilddetails teilweise nicht verfügbar.');
       } else if (preferencesRef.current.kind !== 'satellite') {
         setMapError('Kartendaten teilweise nicht verfügbar.');
       }
     });
-    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
+    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'satellite-dop', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
     map.on('moveend', () => {
       redrawMarkers.current();
+      // Satellit ohne zulässige Detailquelle: Hinweis statt stillschweigend unscharfer Bilder
+      const c = map.getCenter();
+      setImageryNote(preferencesRef.current.kind === 'satellite' && map.getZoom() > 14 && !dopCovers(c.lng, c.lat));
       if (!centered.current) return;
       const current = preferencesRef.current;
       const values = { ...current, zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() };
@@ -678,6 +682,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
           {mapError && <div>{mapError}</div>}
+          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen) – Straßenkarte als Ersatz.</div>}
           {!info.hasMe && <div>Warte auf Position…</div>}
         </div>
 
