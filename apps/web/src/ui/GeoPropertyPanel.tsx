@@ -18,7 +18,7 @@ interface Catalog {
 
 const buildingNames: Record<string, string> = {
   apartments: 'Mehrfamilienhaus', detached: 'Einfamilienhaus', house: 'Haus', residential: 'Wohngebäude',
-  semidetached_house: 'Doppelhaushälfte', terrace: 'Reihenhaus', bungalow: 'Bungalow', dormitory: 'Wohnheim', commercial: 'Gewerbeimmobilie', retail: 'Ladenlokal', office: 'Bürogebäude',
+  semidetached_house: 'Doppelhaushälfte', terrace: 'Reihenhaus', bungalow: 'Bungalow', dormitory: 'Wohnheim', commercial: 'Gewerbeimmobilie', retail: 'Ladenlokal', office: 'Bürogebäude', virtual_plot: 'Virtuelles Baugrundstück',
 };
 const inRange = (property: GeoPropertyOffer) => property.distanceM !== undefined && property.distanceM <= GEO.interactM;
 
@@ -73,7 +73,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
         geoDo('recenter');
       } else if (t === 'houseEnter') set({ panel: null });
       else {
-        toast(t === 'geoPropertyBuy' ? 'Immobilie gekauft' : `Immobilie verkauft · +${fmt(result.gold)} Gold`, 'ok');
+        toast(t === 'geoPropertyBuild' ? 'Grundstück bebaut' : t === 'geoPropertyBuy' ? 'Immobilie gekauft' : `Immobilie verkauft · +${fmt(result.gold)} Gold`, 'ok');
         setConfirmSale('');
         refresh();
       }
@@ -88,7 +88,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
   const displayed = catalog?.list.filter(property => tab === 'travel' ? property.status === 'mine' :
     (!type || property.building === type) &&
     (!maxPrice || property.buyGold <= Number(maxPrice)) &&
-    (!minArea || property.floorAreaM2 >= Number(minArea)) &&
+    (!minArea || (property.unitAreaM2 ?? (property.floorAreaM2 || property.footprintM2)) >= Number(minArea)) &&
     (!maxDistance || (property.distanceM !== undefined && property.distanceM <= Number(maxDistance)))) ?? [];
 
   return <Win title="Immobilien" icon="⌂" w={610} onClose={() => set({ panel: null })}>
@@ -109,7 +109,7 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
           {Object.entries(buildingNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
         </select></label>
         <label>Preis bis (Gold) <input inputMode="numeric" type="number" min="0" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} /></label>
-        <label>Ab Geschossfläche (m²) <input inputMode="numeric" type="number" min="0" value={minArea} onChange={e => setMinArea(e.target.value)} /></label>
+        <label>Fläche ab (m²) <input inputMode="numeric" type="number" min="0" value={minArea} onChange={e => setMinArea(e.target.value)} /></label>
         <label>Entfernung bis (m) <input inputMode="numeric" type="number" min="0" value={maxDistance} onChange={e => setMaxDistance(e.target.value)} /></label>
       </div>
     </details>}
@@ -122,16 +122,19 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
             'Im Umkreis deiner Position sind keine Immobilien im Katalog.'}
       </p>}
       <div className="col scroll" style={{ maxHeight: '55vh' }}>{displayed.map(property => {
-        const name = buildingNames[property.building] || 'Wohngebäude';
+        const name = property.unitAreaM2 ? 'Wohnung im Mehrfamilienhaus' : buildingNames[property.building] || 'Wohngebäude';
         const nearby = inRange(property);
         const status = property.status === 'mine' ? 'Dein Eigentum' : property.status === 'owned' ? 'Vergeben' : 'Kauf verfügbar';
         return <article key={property.id} className="card col">
           <div className="row wrap"><b className="grow">{name}</b><span className="pill">{status}</span></div>
           <div className="sm">
-            {fmt(property.footprintM2)} m² Grundfläche · ca. {fmt(property.floorAreaM2)} m² Geschossfläche · {property.levels} Geschosse
+            {fmt(property.footprintM2)} m² {property.building === 'virtual_plot' ? 'Grundstücksfläche · Ausbau im Spiel' :
+              `Grundfläche · ca. ${fmt(property.floorAreaM2)} m² Geschossfläche · ${property.levels} Geschosse`}
             {property.levelsEstimated ? ' (geschätzt)' : ''}
-            {' · ca. '}{fmt(property.estimatedRooms)} Zimmer (geschätzt)
+            {property.estimatedRooms > 0 && <> · ca. {fmt(property.estimatedRooms)} Zimmer (geschätzt)</>}
           </div>
+          {!!property.usableAreaEstimateM2 && <div className="sm dim">{fmt(property.usableAreaEstimateM2)} m² {
+            ['commercial', 'office', 'retail'].includes(property.building) ? 'Nutzfläche' : 'Wohnfläche'} (geschätzt)</div>}
           {property.footprint && <PropertyFootprint footprint={property.footprint} />}
           <div className="row wrap sm dim">
             {property.distanceM !== undefined && <span>{fmt(property.distanceM)} m entfernt</span>}
@@ -144,6 +147,8 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
             {property.status === 'available' && <button className="btn sm pri"
               disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.buyGold}
               onClick={() => void action('geoPropertyBuy', property)}>Kaufen</button>}
+            {property.buildGold !== undefined && <button className="btn sm" disabled={busy || !nearby || (char?.gold ?? 0) < property.buildGold}
+              onClick={() => void action('geoPropertyBuild', property)}>Für {fmt(property.buildGold)} Gold bebauen</button>}
             {property.houseId && nearby && <button className="btn sm pri" disabled={busy}
               onClick={() => void action('houseEnter', property)}>Betreten</button>}
             {property.status === 'mine' && <button className="btn sm" disabled={busy || !catalog.virtual}

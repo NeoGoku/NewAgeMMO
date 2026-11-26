@@ -6,7 +6,9 @@ export const PROPERTY_BUILDINGS = [...RESIDENTIAL_BUILDINGS, 'commercial', 'reta
 export const supportedPropertyBuilding = (name: unknown): name is typeof PROPERTY_BUILDINGS[number] =>
   PROPERTY_BUILDINGS.some(building => building === name);
 
-export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding }
+export interface GeoPropertyOwnership { id: string; purchaseGold: number; building: GeoPropertyBuilding; built?: true }
+export const VIRTUAL_PLOT = 'virtual_plot' as const;
+export const PROPERTY_BUILD_COST = 3500;
 
 type PropertyCoordinate = [longitude: number, latitude: number];
 type PropertyPolygon = PropertyCoordinate[][];
@@ -16,12 +18,13 @@ export type GeoPropertyFootprint = { type: 'Polygon'; coordinates: PropertyPolyg
 export interface GeoPropertyBuilding {
   id: string;
   osmId: string;
-  building: typeof PROPERTY_BUILDINGS[number];
+  building: typeof PROPERTY_BUILDINGS[number] | typeof VIRTUAL_PLOT;
   lat: number;
   lon: number;
   footprintM2: number;
   floorAreaM2: number;
   estimatedRooms: number;
+  unitAreaM2?: number;
   footprint: GeoPropertyFootprint;
   levels: number;
   levelsEstimated: boolean;
@@ -33,6 +36,8 @@ export interface GeoPropertyOffer extends Omit<GeoPropertyBuilding, 'footprint'>
   status: 'available' | 'owned' | 'mine';
   sellGold?: number;
   houseId?: string;
+  buildGold?: number;
+  usableAreaEstimateM2?: number;
   distanceM?: number;
 }
 
@@ -74,9 +79,14 @@ export function validPropertyFootprint(value: unknown): value is GeoPropertyFoot
 export function validPropertyOwnership(value: unknown): value is GeoPropertyOwnership {
   if (!record(value) || !validPropertyId(value.id) || !positiveInt(value.purchaseGold) || !record(value.building)) return false;
   const building = value.building;
-  return building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
-    supportedPropertyBuilding(building.building) && positiveInt(building.footprintM2) && positiveInt(building.levels) &&
-    building.floorAreaM2 === building.footprintM2 * building.levels && positiveInt(building.estimatedRooms) &&
+  const plot = building.building === VIRTUAL_PLOT;
+  const validArea = plot ? building.levels === 0 && building.floorAreaM2 === 0 && building.estimatedRooms === 0 :
+    supportedPropertyBuilding(building.building) && positiveInt(building.levels) && positiveInt(building.estimatedRooms) &&
+    building.floorAreaM2 === (building.footprintM2 as number) * building.levels;
+  if (building.unitAreaM2 !== undefined && (building.building !== 'apartments' ||
+    !positiveInt(building.unitAreaM2) || typeof building.floorAreaM2 !== 'number' || building.unitAreaM2 > building.floorAreaM2)) return false;
+  return (value.built === undefined || (value.built === true && plot)) && building.id === value.id && building.osmId === value.id.slice('property:osm:'.length).replace(':', '/') &&
+    positiveInt(building.footprintM2) && validArea &&
     typeof building.levelsEstimated === 'boolean' && building.buyGold === value.purchaseGold &&
     validPosition(building.lon, building.lat) && validPropertyFootprint(building.footprint);
 }

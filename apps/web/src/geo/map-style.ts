@@ -206,8 +206,18 @@ function themeLayers(theme: Theme, preferences: MapPreferences): LayerSpecificat
     fill('theme-water', 'water', 0, { 'fill-color': colors(theme.water), 'fill-outline-color': colors(theme.shore) }),
     line('theme-waterway', 'waterway', 10, { 'line-color': colors(theme.shore), 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 19, 2.1] }),
     line('theme-boundary', 'boundary', 2, { 'line-color': colors(theme.ink), 'line-opacity': 0.22, 'line-width': 1, 'line-dasharray': theme.dash }, ['<=', ['get', 'admin_level'], 4]),
+    fill('theme-public-space', 'landuse', 10, {
+      'fill-pattern': theme.texture,
+      'fill-opacity': theme.texture === 'leaves' || theme.texture === 'dither' ? .75 : .33
+    }, surface && ['leaves', 'dither', 'blocks'].includes(theme.texture)),
+    line('theme-transit-halo', 'transportation', 9, {
+      'line-color': colors(theme.halo), 'line-width': 5, 'line-opacity': .7, 'line-blur': 1
+    }, isClass(['rail', 'transit']), surface && ['windows', 'circuit', 'blocks'].includes(theme.texture)),
     fill('theme-building', 'building', 13, { 'fill-color': colors(theme.building), 'fill-outline-color': colors(theme.outline) }, preferences.kind === 'standard'),
-    line('theme-rail', 'transportation', 12, { 'line-color': colors(theme.outline), 'line-width': 1.1, 'line-dasharray': [3, 1.5] }, isClass(['rail', 'transit'])),
+    line('theme-rail', 'transportation', 11, {
+      'line-color': colors(theme.texture === 'blocks' || theme.texture === 'windows' ? theme.highway : theme.outline),
+      'line-width': theme.texture === 'blocks' ? 2 : 1.1, 'line-dasharray': theme.texture === 'windows' ? [1, 1] : [3, 1.5]
+    }, isClass(['rail', 'transit'])),
     line('theme-path', 'transportation', 13, { 'line-color': colors(theme.ink), 'line-opacity': 0.5, 'line-width': 1.1, 'line-dasharray': theme.dash }, isClass(paths)),
     line('theme-road-light', 'transportation', 8, { 'line-color': colors(theme.light), 'line-width': roadWidth(5), 'line-blur': 3, 'line-opacity': theme.glow }, isClass(mainRoads), surface && theme.glow > 0),
     line('theme-road-casing', 'transportation', 7, { 'line-color': colors(theme.casing), 'line-width': roadWidth(1.7), 'line-opacity': surface ? 1 : 0.55 }, roads, true),

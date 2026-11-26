@@ -17,3 +17,5 @@ Underground, Urban, Vintage, Adventure, Cyber, Pixel und Neonviertel verwenden e
 Immobilienkataloge und Valhalla-Geometrien können auf OpenStreetMap (ODbL) beruhen. Beim Bereitstellen eines Katalogs Quellenbezug, Datenstand und die ODbL-Bedingungen mitführen.
 
 Der gebündelte Braunschweig-Katalog enthält aus dem Geofabrik-Auszug für Niedersachsen abgeleitete OpenStreetMap-Gebäudeumrisse unter ODbL 1.0. Datenstand, Lizenz und Herkunft stehen in der GeoJSON-Datei. [Geofabrik](https://download.geofabrik.de/europe/germany/niedersachsen.html) · [OpenStreetMap](https://www.openstreetmap.org/copyright) · [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/)
+
+Das Braunschweiger Gehwegenetz beruht auf demselben Geofabrik-Extrakt und wird einschließlich Herkunft und ODbL-Hinweisen ausgeliefert. Zwei Beispielrouten wurden mit den ausgelieferten Geodaten berechnet. Der Datenworkflow prüft zudem eine öffentliche Sentinel-2-Detailkachel für Braunschweig auf JPEG und CORS.

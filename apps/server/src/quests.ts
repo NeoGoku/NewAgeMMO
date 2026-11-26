@@ -1,4 +1,4 @@
-import { QUESTS, ITEMS, MOBS, LOCS, NPCS, REGIONAL_QUEST_ID, type Goal, type QuestDef } from '@nam/game-data';
+import { QUESTS, ITEMS, MOBS, LOCS, NPCS, NODES, REGIONAL_QUEST_ID, type Goal, type QuestDef } from '@nam/game-data';
 import { expToNext, haversine, hash32, rad, wrapLon, type GeoCoord, type QuestRegion, type Rarity } from '@nam/shared';
 import { send, sys, now, type Player } from './state';
 import { osmObjects } from './geo-osm';
@@ -6,10 +6,10 @@ import { geoObjects } from './geo-world';
 import { publishProgress } from './character-save';
 import { invAdd, invCount, invRemove, gainExp, addTrainExp, recalc } from './chars';
 const day = () => Math.floor(Date.now() / 864e5);
-type RegionalGoal = Extract<Goal['k'], 'region' | 'survey' | 'regional_hunt'>;
+type RegionalGoal = Extract<Goal['k'], 'region' | 'survey' | 'regional_hunt' | 'regional_gather'>;
 function regionalGoal(q: QuestDef): RegionalGoal | undefined {
   const kind = q.goals[0]?.k;
-  if (kind === 'region' || kind === 'survey' || kind === 'regional_hunt') return kind;
+  if (kind === 'region' || kind === 'survey' || kind === 'regional_hunt' || kind === 'regional_gather') return kind;
 }
 export function dailyReset(p: Player) { const d = day(); if (p.c.dailyReset !== d) { p.c.dailyReset = d; for (const [id, qs] of Object.entries(p.c.quests)) if (QUESTS[id]?.repeat === 'daily') delete p.c.quests[id]; p.c.questsDone = p.c.questsDone.filter(id => QUESTS[id]?.repeat !== 'daily'); } }
 export function questEvent(p: Player, kind: 'kill' | 'item' | 'craft' | 'gather' | 'visit' | 'talk' | RegionalGoal, target: string, n = 1, fam?: string) {
@@ -20,7 +20,7 @@ export function questEvent(p: Player, kind: 'kill' | 'item' | 'craft' | 'gather'
       let inc = 0;
       if (kind === 'kill') { if (g.k === 'kill' && (g.t === '*' || g.t === target)) inc = n; else if (g.k === 'boss' && g.t === target) inc = n; else if (g.k === 'dungeon' && g.t === p.loc) inc = n; }
       else if (kind === 'craft' && g.k === 'craft' && (g.t === '*' || g.t === target)) inc = n; else if (kind === 'gather' && g.k === 'gather' && (g.t === '*' || g.t === target)) inc = n;
-      else if ((kind === 'region' || kind === 'survey' || kind === 'regional_hunt') && g.k === kind && target === id) inc = 1;
+      else if ((kind === 'region' || kind === 'survey' || kind === 'regional_hunt' || kind === 'regional_gather') && g.k === kind && target === id) inc = 1;
       else if (kind === 'visit' && g.k === 'visit' && g.t === target) inc = 1; else if (kind === 'talk' && g.k === 'talk' && g.t === target) inc = 1;
       if (g.k === 'collect' && (kind === 'item' || kind === 'gather') ) { const c = Math.min(g.n, invCount(p.c, g.t)); if (c !== qs.prog[i]) { qs.prog[i] = c; changed = true; } }
       if (inc && qs.prog[i] < g.n) { qs.prog[i] = Math.min(g.n, qs.prog[i] + inc); changed = true; }
@@ -43,6 +43,11 @@ function selectQuestRegion(p: Player, kind: RegionalGoal): QuestRegion | undefin
     const mob = geoObjects(geo.lat, geo.lon, 900).find(point => point.k === 'mob' && point.role === 'normal' &&
       (point.lvl ?? 1) <= p.c.level + 4 && haversine(geo.lat, geo.lon, point.lat, point.lon) >= 260);
     return mob && { lat: mob.lat, lon: mob.lon, radius: 145, label: 'Regionales Patrouillengebiet', virtualOnly: false };
+  }
+  if (kind === 'regional_gather') {
+    const node = geoObjects(geo.lat, geo.lon, 900).find(point => point.k === 'node' &&
+      (p.c.prof[NODES[point.def]?.prof]?.lvl ?? 1) >= (NODES[point.def]?.tier ?? Infinity) * 10);
+    return node && { lat: node.lat, lon: node.lon, radius: 160, label: 'Regionales Sammelgebiet', virtualOnly: false };
   }
   const publicPoint = publicQuestSite(geo);
   if (publicPoint) {
@@ -96,6 +101,15 @@ export function recordRegionalHunt(p: Player, origin: GeoCoord) {
   for (const [id, quest] of Object.entries(p.c.quests)) {
     if (QUESTS[id]?.goals[0]?.k === 'regional_hunt' && quest.state === 'active' && quest.region && inQuestRegion(origin, quest.region)) {
       questEvent(p, 'regional_hunt', id);
+    }
+  }
+}
+
+export function recordRegionalGather(p: Player, point: GeoCoord) {
+  if (p.c.dailyReset !== day()) return;
+  for (const [id, quest] of Object.entries(p.c.quests)) {
+    if (QUESTS[id]?.goals[0]?.k === 'regional_gather' && quest.state === 'active' && quest.region && inQuestRegion(point, quest.region)) {
+      questEvent(p, 'regional_gather', id);
     }
   }
 }

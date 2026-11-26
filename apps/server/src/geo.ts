@@ -4,7 +4,7 @@ import { GEO_ANCHORS, GEO_START, LOCS, MOBS, NODES, ITEMS } from '@nam/game-data
 import { clamp, deferMessages, G, now, send, sys, uid, type GeoState, type House, type Player } from './state';
 import { H, NO_CHAR } from './handlers';
 import { setLocSilent, enterScene, enterPartyDungeon, exitScene, leaveDungeon, teleportTo } from './world';
-import { questEvent, recordRegionalSurvey, recordRegionalVisit } from './quests';
+import { questEvent, recordRegionalGather, recordRegionalSurvey, recordRegionalVisit } from './quests';
 import { spawnMob, profGain, locOf } from './game';
 import { invAdd, addTrainExp } from './chars';
 import { anchorList, geoObjects } from './geo-world';
@@ -545,7 +545,24 @@ H.geoInteract = (p, m) => {
       sys(p, `Begegnung: ${mobDef.name} (Lv ${mobDef.lvl})`, 'warn');
       return { scene };
     }
-    case 'node': { const nd = NODES[o.def]; const pr = p.c.prof[nd.prof] ||= { lvl: 1, exp: 0 }; if (pr.lvl < nd.tier * 10) return `Benötigt Berufslevel ${nd.tier * 10}`; const toolType = { mining: 'pickaxe', herbalism: 'sickle', woodcutting: 'axe' }[nd.prof]; if (!p.c.inventory.some(i => ITEMS[i.id].tool === toolType && ITEMS[i.id].tier >= nd.tier)) return 'Passendes Werkzeug fehlt'; taken(); const q = 1 + Math.floor(Math.random() * 3); invAdd(p.c, nd.yield, q); profGain(p, nd.prof, 8 + nd.tier * 12); questEvent(p, 'gather', nd.yield, q); sys(p, `Gesammelt: ${ITEMS[nd.yield].name} ×${q}`, 'loot'); return { gathered: nd.yield }; }
+    case 'node': {
+      const node = NODES[o.def];
+      const profession = p.c.prof[node.prof] ||= { lvl: 1, exp: 0 };
+      if (profession.lvl < node.tier * 10) return `Benötigt Berufslevel ${node.tier * 10}`;
+      const tool = { mining: 'pickaxe', herbalism: 'sickle', woodcutting: 'axe' }[node.prof];
+      if (!p.c.inventory.some(item => ITEMS[item.id].tool === tool && ITEMS[item.id].tier >= node.tier)) return 'Passendes Werkzeug fehlt';
+      const quantity = 1 + Math.floor(Math.random() * 3);
+      const received = quantity - invAdd(p.c, node.yield, quantity);
+      if (!received) return 'Inventar voll';
+      publishProgress(p, () => {
+        profGain(p, node.prof, 8 + node.tier * 12);
+        questEvent(p, 'gather', node.yield, received);
+        recordRegionalGather(p, o);
+        sys(p, `Gesammelt: ${ITEMS[node.yield].name} ×${received}`, 'loot');
+      });
+      taken();
+      return { gathered: node.yield };
+    }
     case 'dungeon': {
       const l = LOCS[o.def];
       if (p.c.level < l.lvl[0] - 5) return `Empfohlen ab Level ${l.lvl[0]}`;

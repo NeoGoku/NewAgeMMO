@@ -1,4 +1,4 @@
-import { BAL, GEO, PROPERTY_SOURCE, PROPERTY_REGION, PROPERTY_BOUNDS, R_EARTH, haversine, rad, supportedPropertyBuilding, validPropertyFootprint, type GeoPropertyBuilding } from '@nam/shared';
+import { BAL, GEO, PROPERTY_SOURCE, PROPERTY_REGION, PROPERTY_BOUNDS, VIRTUAL_PLOT, R_EARTH, haversine, rad, supportedPropertyBuilding, validPropertyFootprint, type GeoPropertyBuilding } from '@nam/shared';
 
 export const PROPERTY_CATALOG_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_FEATURES = 1500;
@@ -62,8 +62,11 @@ export function parsePropertyBuilding(raw: unknown): GeoPropertyBuilding | undef
   if (!record(raw) || raw.type !== 'Feature' || !record(raw.properties) || !record(raw.geometry)) return;
   const osmId = raw.id ?? raw.properties['@id'];
   if (typeof osmId !== 'string' || !/^(way|relation)\/[1-9]\d{0,14}$/.test(osmId)) return;
-  const building = raw.properties.building;
-  if (!supportedPropertyBuilding(building)) return;
+  const tag = raw.properties.building;
+  const building = supportedPropertyBuilding(tag) ? tag :
+    (tag === undefined || tag === 'no') && raw.properties.landuse === 'greenfield' ? VIRTUAL_PLOT : undefined;
+  if (!building) return;
+  const plot = building === VIRTUAL_PLOT;
   const { type, coordinates } = raw.geometry;
   const footprint = { type, coordinates };
   if (!validPropertyFootprint(footprint)) return;
@@ -72,16 +75,18 @@ export function parsePropertyBuilding(raw: unknown): GeoPropertyBuilding | undef
   if (outlines.some(outline => !outline)) return;
   const areas = outlines.filter(outline => outline !== undefined).sort((a, b) => b.area - a.area);
   const footprintM2 = Math.round(areas.reduce((total, outline) => total + outline.area, 0));
-  if (footprintM2 < 20 || footprintM2 > 15000) return;
+  if (footprintM2 < 20 || footprintM2 > (plot ? 120000 : 15000)) return;
   const rawLevels = raw.properties['building:levels'];
   const levelsValue = typeof rawLevels === 'string' && /^\d{1,2}$/.test(rawLevels) ? Number(rawLevels) : rawLevels;
   const knownLevels = typeof levelsValue === 'number' && Number.isInteger(levelsValue) && levelsValue > 0 && levelsValue <= 60;
-  const levels = knownLevels ? levelsValue : building === 'apartments' || building === 'dormitory' ? 3 : building === 'bungalow' ? 1 : 2;
+  const levels = plot ? 0 : knownLevels ? levelsValue : building === 'apartments' || building === 'dormitory' ? 3 : building === 'bungalow' ? 1 : 2;
   const floorAreaM2 = footprintM2 * levels;
-  const estimatedRooms = Math.max(1, Math.round(floorAreaM2 / BAL.propertyM2PerRoom));
-  const buyGold = Math.min(BAL.propertyMaxGold, Math.max(BAL.houseCost, Math.round(floorAreaM2 * BAL.propertyGoldPerM2 / 100) * 100));
+  // The floor area covers the whole building. An apartment offer covers one simulated unit.
+  const unitAreaM2 = building === 'apartments' ? Math.max(1, Math.round(floorAreaM2 * .75 / Math.max(1, Math.ceil(floorAreaM2 / 105)))) : undefined;
+  const estimatedRooms = plot ? 0 : Math.max(1, Math.round((unitAreaM2 ?? floorAreaM2) / BAL.propertyM2PerRoom));
+  const buyGold = Math.min(BAL.propertyMaxGold, Math.max(BAL.houseCost, Math.round((plot ? footprintM2 * .15 : unitAreaM2 ?? floorAreaM2) * BAL.propertyGoldPerM2 / 100) * 100));
   const { lat, lon } = areas[0];
-  return { id: 'property:osm:' + osmId.replace('/', ':'), osmId, building, lat, lon, footprint, footprintM2, floorAreaM2, estimatedRooms, levels, levelsEstimated: !knownLevels, buyGold };
+  return { id: 'property:osm:' + osmId.replace('/', ':'), osmId, building, lat, lon, footprint, footprintM2, floorAreaM2, estimatedRooms, ...(unitAreaM2 && { unitAreaM2 }), levels, levelsEstimated: !plot && !knownLevels, buyGold };
 }
 
 export class PropertyCatalog {
@@ -117,8 +122,11 @@ export class PropertyCatalog {
 }
 
 export function nearbyBuildings(buildings: Iterable<GeoPropertyBuilding>, lat: number, lon: number, radius: number) {
-  return Array.from(buildings, building => ({ building, distance: haversine(lat, lon, building.lat, building.lon) }))
-    .filter(entry => entry.distance <= radius).sort((a, b) => a.distance - b.distance).slice(0, MAX_NEARBY);
+  const ordered = Array.from(buildings, building => ({ building, distance: haversine(lat, lon, building.lat, building.lon) }))
+    .filter(entry => entry.distance <= radius).sort((a, b) => a.distance - b.distance);
+  const plots = ordered.filter(entry => entry.building.building === VIRTUAL_PLOT).slice(0, 3);
+  const other = ordered.filter(entry => entry.building.building !== VIRTUAL_PLOT).slice(0, MAX_NEARBY - plots.length);
+  return [...plots, ...other].sort((a, b) => a.distance - b.distance);
 }
 
 let properties = new PropertyCatalog();

@@ -10,7 +10,7 @@ export const GEO = {
   maxSpeed: { gps: 45, virtual: 30 } as Record<string, number>, // m/s Obergrenzen (Manipulationsschutz)
   spawnBucketMs: 20 * 60e3, // Spawns rotieren alle 20 Minuten
   minPosIntervalMs: 900,
-  directTravelMaxM: 2000,
+  directTravelMaxM: 25_000,
   steerTickMs: 100,
   steerTimeoutMs: 500,
 };

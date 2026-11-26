@@ -40,6 +40,7 @@ export function propertyMarkerStatus(status: unknown) {
 
 export function propertyMarkerType(building: unknown) {
   switch (building) {
+    case 'virtual_plot': return { label: 'Baugrundstück', icon: 'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10' };
     case 'apartments': case 'dormitory':
       return { label: 'Wohngebäude', icon: 'M5 21V3h14v18H5Zm4-14h1m4 0h1m-6 4h1m4 0h1m-6 4h1m4 0h1m-5 6v-3h4v3' };
     case 'commercial': case 'retail': case 'office':

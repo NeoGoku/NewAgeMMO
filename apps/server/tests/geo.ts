@@ -193,7 +193,26 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   const direct = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + .003 }, 'walk', true);
   ok(typeof direct !== 'string' && direct.direct && direct.points.length === 2 && direct.speedMps === 5 / 3.6,
     'Explizite Luftlinie ist ohne Routendienst mit Gehgeschwindigkeit verfügbar');
+  const extended = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + .1 }, 'run', true);
+  ok(typeof extended !== 'string' && extended.direct && extended.speedMps === 10 / 3.6, 'Längere virtuelle Reisen bleiben als Luftlinie berechenbar');
+  const { WalkingNetwork } = await import('../src/walking-network');
+  const point = { lat: 52.26, lon: 10.52 };
+  const localDestination = { lat: 52.261, lon: 10.521 };
+  let loads = 0;
+  configureRouting(undefined, async () => {
+    loads++;
+    return new WalkingNetwork({ version: 1, source: 'OpenStreetMap',
+      points: [52260000,10520000,52261000,10520000,52261000,10521000], edges: [0,1,1,2] });
+  });
+  const walking = await planRoute(point, localDestination, 'walk');
+  const wrongWay = await planRoute(localDestination, point, 'run');
+  ok(typeof walking !== 'string' && !walking.direct && walking.points.length === 3 &&
+    routeLength(walking.points) > haversine(point.lat, point.lon, localDestination.lat, localDestination.lon) &&
+    typeof wrongWay === 'string' && loads === 1, 'Gebündeltes Gehwegenetz nutzt gerichtete Straßenkanten statt Luftlinien');
   const distantDirect = await planRoute(queryPoint, { ...queryPoint, lon: queryPoint.lon + 1 }, 'walk', true);
-  ok(typeof distantDirect === 'string', 'Direkte virtuelle Bewegung ist auf kurze Distanzen begrenzt');
+  ok(typeof distantDirect === 'string', 'Direkte virtuelle Bewegung ist auf 25 km begrenzt');
+  const windows = [0, 20, 40].map(minute => geoObjects(braunschweig.lat, braunschweig.lon, GEO.viewM,
+    Date.UTC(2026, 10, 26, 12, minute)).filter(o => o.extra?.regionalEvent === 'aetherstorm').map(o => o.id));
+  ok(windows.flat().length > 0 && new Set(windows.flat()).size === windows.flat().length, 'Regionale Ätherstürme wechseln nach Serverzeit');
   ws.close(); srv.kill(); console.log(fail ? 'FAIL' : 'Alle Geo-Tests bestanden'); process.exit(fail ? 1 : 0);
 })();

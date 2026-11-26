@@ -4,14 +4,20 @@ import { WebSocketServer } from 'ws';
 import { makeStore } from './store-node'; import { G } from './state'; import { createCore, log } from './core'; import { LOCS, NPCS } from '@nam/game-data';
 import { configureRegionalProperties } from './geo-property-regions';
 import { configureOsm } from './geo-osm';
+import { WalkingNetwork, WALKING_NETWORK_MAX_BYTES } from './walking-network';
 import { readPropertyCatalog } from './property-file';
 const PORT = Number(process.env.PORT || 8080);
 async function main() {
   const store = makeStore();
   const bundledCatalog = fileURLToPath(new URL('../../web/public/braunschweig.geojson', import.meta.url));
   const catalogPath = process.env.PROPERTY_CATALOG_GEOJSON ?? (fs.existsSync(bundledCatalog) ? bundledCatalog : undefined);
+  const walkingPath = fileURLToPath(new URL('../../web/public/braunschweig-walking.json', import.meta.url));
+  const walkingNetwork = fs.existsSync(walkingPath) ? async () => {
+    if ((await fs.promises.stat(walkingPath)).size > WALKING_NETWORK_MAX_BYTES) throw new Error('OSM-Gehwegenetz ist zu groß');
+    return new WalkingNetwork(JSON.parse(await fs.promises.readFile(walkingPath, 'utf8')));
+  } : undefined;
   const core = await createCore(store, { propertyCatalog: await readPropertyCatalog(catalogPath),
-    adminUsers: () => process.env.ADMIN_USERS, routingUrl: process.env.VALHALLA_URL });
+    adminUsers: () => process.env.ADMIN_USERS, routingUrl: process.env.VALHALLA_URL, walkingNetwork });
   const overpass = process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter';
   configureOsm(overpass, store.osmCache);
   configureRegionalProperties(process.env.PROPERTY_OVERPASS_URL ?? overpass);

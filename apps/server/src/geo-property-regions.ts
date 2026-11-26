@@ -63,8 +63,10 @@ export class RegionalProperties {
 
   private async fetchRegion(box: string[]): Promise<Region | undefined> {
     try {
-      const data = '[out:json][timeout:5][maxsize:2097152];way["building"~"^(' +
-        PROPERTY_BUILDINGS.join('|') + ')$"](' + box.join(',') + ');out geom ' + MAX_BUILDINGS + ';';
+      const bounds = '(' + box.join(',') + ')';
+      const data = '[out:json][timeout:5][maxsize:2097152];(way["building"~"^(' +
+        PROPERTY_BUILDINGS.join('|') + ')$"]' + bounds + ';way["landuse"="greenfield"]["access"!~"^(no|private)$"]' +
+        bounds + ';);out geom ' + MAX_BUILDINGS + ';';
       const response = await this.request(this.endpoint, {
         method: 'POST', body: new URLSearchParams({ data }), signal: AbortSignal.timeout(6500),
       });

@@ -146,6 +146,12 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
       const boss = selectMob('boss', level + 36 + (seed % 3) * 18, hash32('boss:' + id));
       keep(mobObject(boss, clat, clon, `b:${id}:${hour}`));
     }
+    if (wrap(cell.row, 4) === 0 && cell.column % 4 === 0 && (Math.floor(t / 60000) + seed % 60) % 60 < 20) {
+      const [eventLat, eventLon] = cellPoint(cell, .44, .58);
+      const invader = selectMob('elite', level + 2, hash32('storm:' + id));
+      keep({ ...mobObject(invader, eventLat, eventLon, `storm:${id}:${Math.floor((t + (seed % 60) * 60000) / 36e5)}`),
+        name: 'Äthersturm · ' + invader.name, extra: { regionalEvent: 'aetherstorm' } });
+    }
     if (seed % 101 === 0) {
       const [plat, plon] = cellPoint(cell, .71, .26);
       keep({ id: 'p:' + id, k: 'poi', def: 'treasure', lat: plat, lon: plon, name: 'Magische Quelle' });

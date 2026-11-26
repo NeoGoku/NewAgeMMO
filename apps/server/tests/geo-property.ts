@@ -20,7 +20,8 @@ const feature = {
 };
 const catalog = {
   type: 'FeatureCollection', source: 'OpenStreetMap', osmSnapshot: '2026-08-01T00:00:00Z',
-  features: [feature],
+  features: [feature, { ...feature, id: 'way/1235', properties: { landuse: 'greenfield' },
+    geometry: { type: 'Polygon', coordinates: [square.map(([lon, lat]) => [lon + .0003, lat])] } }],
 };
 const location = { lat: 52.26895, lon: 10.52685 };
 
@@ -153,6 +154,21 @@ try {
   assert.equal((await store.get('chars', a.active.id)).geoProperty, undefined);
   assert.equal((await a.socket.req('geoPropertySell', { id })).t, 'err', 'the same property cannot be sold twice');
   assert.equal((await b.socket.req('geoPropertyBuy', { id })).t, 'ok', 'sold property becomes available again');
+  const plotId = 'property:osm:way:1235';
+  const plot = (await a.socket.req('geoPropertyList', { id: plotId })).list[0];
+  assert.equal(plot.building, 'virtual_plot');
+  assert.equal(plot.floorAreaM2, 0);
+  assert.equal((await a.socket.req('geoPropertyBuy', { id: plotId })).t, 'ok');
+  const plotHouse = a.active.c.houseId;
+  assert.equal((await a.socket.req('houseEnter', { id: plotHouse })).t, 'err', 'a bare plot cannot be entered');
+  assert.equal((await b.socket.req('geoPropertyBuild', { id: plotId })).t, 'err', 'only the owner can build');
+  store.failNextFlush = true;
+  const beforeBuild = a.active.c.gold;
+  assert.equal((await a.socket.req('geoPropertyBuild', { id: plotId })).t, 'err');
+  assert.equal(a.active.c.gold, beforeBuild);
+  assert.equal((await a.socket.req('geoPropertyBuild', { id: plotId })).t, 'ok');
+  assert.equal((await store.get('chars', a.active.id)).geoProperty.built, true);
+  assert.equal((await a.socket.req('houseEnter', { id: plotHouse })).t, 'ok', 'the completed building has a usable interior');
   buyerId = b.active.id;
 } finally {
   await core.shutdown();

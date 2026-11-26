@@ -1,5 +1,7 @@
 import { GEO, GEO_TRAVEL_MODES, geoTravelSpeed, haversine, moveToward, type Character, type GeoCoord, type GeoTravelMode, type SavedGeoTrip } from '@nam/shared';
 
+import { coversWalkingNetwork, WalkingNetwork } from './walking-network';
+
 const COSTING = { walk: 'pedestrian', run: 'pedestrian', bike: 'bicycle', mount: 'pedestrian', motorbike: 'motorcycle', car: 'auto' } as const;
 const MAX_POINTS = 12000;
 const SNAP_M = 150;
@@ -37,9 +39,13 @@ function decodeShape(shape: string): GeoCoord[] {
 }
 
 let endpoint: URL | undefined;
+let localNetwork: (() => Promise<WalkingNetwork>) | undefined;
+let loadedNetwork: Promise<WalkingNetwork> | undefined;
 
-export function configureRouting(base?: string) {
+export function configureRouting(base?: string, walkingNetwork?: () => Promise<WalkingNetwork>) {
   endpoint = undefined;
+  localNetwork = walkingNetwork;
+  loadedNetwork = undefined;
   if (!base?.trim()) return;
   const url = new URL(base.trim());
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
@@ -65,11 +71,37 @@ export async function planRoute(origin: GeoCoord, target: GeoCoord, mode: GeoTra
   const limitMps = geoTravelSpeed(mode, mount);
   if (direct) {
     if (mode !== 'walk' && mode !== 'run') return 'Direkte virtuelle Bewegung ist nur zu Fuß verfügbar';
-    if (distance > GEO.directTravelMaxM) return 'Direkte virtuelle Bewegung ist auf 2 km begrenzt';
+    if (distance > GEO.directTravelMaxM) return `Virtuelle Luftlinienreisen sind auf ${GEO.directTravelMaxM / 1000} km begrenzt`;
     return { points: [origin, target], speedMps: limitMps, direct: true };
   }
   if (mode === 'fly') return { points: [origin, target], speedMps: limitMps };
-  if (!endpoint) return 'Die Straßenrouten sind auf diesem Server nicht eingerichtet';
+  if (endpoint) {
+    const road = await valhallaRoute(endpoint, origin, target, mode, limitMps);
+    if (typeof road !== 'string') return road;
+    return await localWalk(origin, target, mode, limitMps) ?? road;
+  }
+  return await localWalk(origin, target, mode, limitMps) ??
+    'Straßenrouting ist für dieses Gebiet oder dieses Verkehrsmittel nicht eingerichtet';
+}
+
+async function localWalk(origin: GeoCoord, target: GeoCoord, mode: GeoTravelMode, speedMps: number) {
+  if (!localNetwork || (mode !== 'walk' && mode !== 'run') ||
+    !coversWalkingNetwork(origin) || !coversWalkingNetwork(target)) return;
+  try {
+    const network = await (loadedNetwork ??= localNetwork());
+    const points = network.route(origin, target);
+    if (!points || points.length > MAX_POINTS || routeLength(points) < 1) {
+      return 'Im Braunschweiger Gehwegenetz ist kein durchgehender Weg zu diesem Ziel verfügbar';
+    }
+    return { points, speedMps };
+  } catch (error) {
+    loadedNetwork = undefined;
+    console.warn('walking_network', String(error));
+  }
+}
+
+async function valhallaRoute(endpoint: URL, origin: GeoCoord, target: GeoCoord,
+  mode: Exclude<GeoTravelMode, 'fly'>, limitMps: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS);
   try {

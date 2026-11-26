@@ -23,7 +23,7 @@ function mapAnchor(id: string, name?: string): QuestPin | undefined {
   return { key: 'objective', role: 'objective', name: name ?? LOCS[id].name, lat, lon, radius };
 }
 function objectivePin(goal: Goal, objects: GeoObj[], from?: { lat: number; lon: number }, region?: QuestRegion): QuestPin | undefined {
-  if (goal.k === 'region' || goal.k === 'survey' || goal.k === 'regional_hunt') return region && { key: 'objective', role: 'objective', ...region, name: region.label };
+  if (goal.k === 'region' || goal.k === 'survey' || goal.k === 'regional_hunt' || goal.k === 'regional_gather') return region && { key: 'objective', role: 'objective', ...region, name: region.label };
   if (goal.k === 'talk') return npcPin(goal.t, 'objective', objects);
   if (goal.k === 'visit' || goal.k === 'dungeon') return mapAnchor(goal.t);
   const match = (o: GeoObj) => {

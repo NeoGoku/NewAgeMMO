@@ -1,4 +1,4 @@
-import { BAL, GEO, PROPERTY_REGION, haversine, validPropertyId, type Character, type GeoPropertyBuilding, type GeoPropertyOffer } from '@nam/shared';
+import { BAL, GEO, PROPERTY_REGION, PROPERTY_BUILD_COST, VIRTUAL_PLOT, haversine, validPropertyId, type Character, type GeoPropertyBuilding, type GeoPropertyOffer } from '@nam/shared';
 import { saveCharacter } from './character-save';
 import { moveToOwnedProperty, pushGeo } from './geo';
 import { propertyCatalog } from './geo-property-data';
@@ -67,9 +67,12 @@ function offerFor(p: Player, building: GeoPropertyBuilding, detailed = false): G
   const owner = p.c.geoProperty;
   const mine = owner?.id === building.id && house?.ownerId === p.id;
   const g = p.geo;
+  const emptyPlot = building.building === VIRTUAL_PLOT && (!house || !G.chars.get(house.ownerId)?.geoProperty?.built);
   return {
     ...summary, footprint: detailed ? footprint : undefined, status: mine ? 'mine' : house ? 'owned' : 'available',
-    houseId: house?.id,
+    houseId: emptyPlot ? undefined : house?.id,
+    buildGold: emptyPlot && mine ? PROPERTY_BUILD_COST : undefined,
+    usableAreaEstimateM2: emptyPlot ? undefined : building.unitAreaM2 ?? Math.round(building.floorAreaM2 * .75),
     sellGold: mine ? Math.floor(owner.purchaseGold * BAL.propertyResaleRate) : undefined,
     distanceM: g?.on && g.has ? Math.round(haversine(g.lat, g.lon, building.lat, building.lon)) : undefined,
   };
@@ -83,9 +86,10 @@ H.geoPropertyList = async (p, m) => {
   const g = p.geo;
   const location = g?.on && g.has ? { lat: g.lat, lon: g.lon } : undefined;
   const seeded = location && catalog.nearby(location.lat, location.lon).length > 0;
-  if (location && !seeded && !m.id) {
-    await loadRegionalProperties(location.lat, location.lon);
-    pushGeo(p);
+  if (location && !m.id) {
+    const load = loadRegionalProperties(location.lat, location.lon);
+    if (!seeded) await load;
+    else if (load) void load.then(() => pushGeo(p));
   }
   const claimed = m.id ? houseFor(m.id) : undefined;
   const requested = !m.id ? undefined : (claimed && propertyPosition(claimed)) ??
@@ -135,6 +139,23 @@ H.geoPropertyBuy = async (p, m) => {
   });
   pushGeo(p);
   return { property: offerFor(p, building) };
+};
+
+H.geoPropertyBuild = async (p, m) => {
+  const house = ownerHouse(p, m.id);
+  const owned = p.c.geoProperty;
+  if (!house || !owned || owned.building.building !== VIRTUAL_PLOT) return 'Kein eigenes Baugrundstück';
+  if (owned.built) return 'Dieses Grundstück ist bereits bebaut';
+  const error = propertyAccess(p, owned.building);
+  if (error) return error;
+  if (p.trade || p.c.gold < PROPERTY_BUILD_COST) return 'Bauen erfordert verfügbares Gold und einen freien Charakter';
+  p.c.gold -= PROPERTY_BUILD_COST;
+  owned.built = true;
+  await saveOwnership(p, () => {
+    delete owned.built;
+    p.c.gold += PROPERTY_BUILD_COST;
+  });
+  return { property: offerFor(p, owned.building) };
 };
 
 H.geoPropertySell = async (p, m) => {

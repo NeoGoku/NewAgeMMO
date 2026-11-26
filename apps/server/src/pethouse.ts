@@ -1,4 +1,4 @@
-import { BAL, RARITY_MULT, type PetInst, type Rarity } from '@nam/shared';
+import { BAL, VIRTUAL_PLOT, RARITY_MULT, type PetInst, type Rarity } from '@nam/shared';
 import { ITEMS, SPECIES, FURN, ROOM_STYLES, EVO_LEVELS, LOCS, NPCS, petExp } from '@nam/game-data';
 import { G, now, uid, send, sys, toLoc, type Player, type House } from './state';
 import { H } from './handlers'; import { anchorHouse, pushGeo } from './geo';
@@ -43,6 +43,7 @@ H.houseEnter = (p, m) => {
   if (h.propertyId) {
     const position = propertyPosition(h);
     if (!position) return 'Immobilienposition nicht verfügbar';
+    if (position.building === VIRTUAL_PLOT && !G.chars.get(h.ownerId)?.geoProperty?.built) return 'Auf diesem Grundstück steht noch kein Gebäude';
     const error = propertyAccess(p, position);
     if (error) return error;
     if (!p.geo?.gps) H.geoStop(p, {});
