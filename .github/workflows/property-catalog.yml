@@ -31,7 +31,7 @@ jobs:
         run: |
           trap 'echo "::error::Geofabrik-Import fehlgeschlagen (Zeile $LINENO)."' ERR
           snapshot="$(osmium fileinfo -g header.option.osmosis_replication_timestamp "$RUNNER_TEMP/niedersachsen.osm.pbf")"
-          osmium extract --strategy=complete_ways --bbox=10.40,52.18,10.68,52.38 \
+          osmium extract --strategy=complete_ways --bbox=10.43,52.215,10.62,52.34 \
             --output="$RUNNER_TEMP/braunschweig.osm.pbf" "$RUNNER_TEMP/niedersachsen.osm.pbf"
           buildings="$(npx --no-install tsx --eval "import { PROPERTY_BUILDINGS } from '@nam/shared'; console.log(PROPERTY_BUILDINGS.join(','))")"
           osmium tags-filter --output="$RUNNER_TEMP/residential.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" "w/building=$buildings"
@@ -41,7 +41,12 @@ jobs:
             npx --no-install tsx scripts/import-osm-properties.ts "$RUNNER_TEMP/braunschweig.geojson"
           osmium tags-filter --output="$RUNNER_TEMP/walking.osm.pbf" "$RUNNER_TEMP/braunschweig.osm.pbf" 'w/highway'
           osmium cat -f opl --output="$RUNNER_TEMP/walking.opl" "$RUNNER_TEMP/walking.osm.pbf"
-          node scripts/import-walking-network.mjs "$RUNNER_TEMP/walking.opl" "$RUNNER_TEMP/braunschweig-walking.json" "$snapshot"
+          if ! message="$(node scripts/import-walking-network.mjs "$RUNNER_TEMP/walking.opl" "$RUNNER_TEMP/braunschweig-walking.json" "$snapshot" 2>&1)"; then
+            printf '::error::%s\n' "$(sed -n '/^Error: /{p;q;}' <<<"$message")"
+            printf '%s\n' "$message"
+            exit 1
+          fi
+          printf '%s\n' "$message"
       - name: Öffentliche Satellitenkachel prüfen
         continue-on-error: true
         run: |

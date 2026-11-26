@@ -30,7 +30,7 @@ for await (const line of createInterface({ input: createReadStream(source), crlf
     const x = Number(fields.find(f => f.startsWith('x'))?.slice(1));
     const y = Number(fields.find(f => f.startsWith('y'))?.slice(1));
     // Retain only inside the clipped region, and avoid crossing barriers without mapped foot access.
-    if (x < 10.40 || x > 10.68 || y < 52.18 || y > 52.38 || !Number.isFinite(x + y) ||
+    if (x < 10.43 || x > 10.62 || y < 52.215 || y > 52.34 || !Number.isFinite(x + y) ||
       forbidden.has(tags.get('foot')) ||
       (!footAllowed.has(tags.get('foot')) && (forbidden.has(tags.get('access')) ||
         (tags.has('barrier') && !['bollard', 'cycle_barrier', 'stile', 'cattle_grid', 'kerb'].includes(tags.get('barrier')))))) continue;
