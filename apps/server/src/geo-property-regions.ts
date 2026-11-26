@@ -1,4 +1,4 @@
-import { GEO, PROPERTY_SOURCE, PROPERTY_BUILDINGS, type GeoObj, type GeoPropertyBuilding } from '@nam/shared';
+import { propertyRentGold, GEO, PROPERTY_SOURCE, PROPERTY_BUILDINGS, type GeoObj, type GeoPropertyBuilding } from '@nam/shared';
 import { nearbyBuildings, parsePropertyBuilding, propertyCatalog } from './geo-property-data';
 import { readPropertyCatalogResponse } from './property-catalog-response';
 
@@ -115,6 +115,6 @@ export function findProperty(id: string, lat: number, lon: number) {
 export function propertyObjects(lat: number, lon: number, radius: number): GeoObj[] {
   return nearbyPropertyCatalog(lat, lon, radius).map(({ building }) => ({
     id: building.id, k: 'house', def: 'property', lat: building.lat, lon: building.lon,
-    name: 'Immobilie', extra: { source: PROPERTY_SOURCE, building: building.building },
+    name: 'Immobilie', extra: { source: PROPERTY_SOURCE, building: building.building, buyGold: building.buyGold, areaM2: building.unitAreaM2 ?? (building.building === 'virtual_plot' ? building.footprintM2 : building.floorAreaM2), ...(building.building === 'virtual_plot' ? {} : { rentGold: propertyRentGold(building.buyGold) }) },
   }));
 }

@@ -26,12 +26,37 @@ export type MarkerCategory = keyof typeof MARKER_CATEGORIES;
 const questGivers = new Set(Object.values(QUESTS).filter(quest => quest.type !== 'hidden').map(quest => quest.giver));
 
 export const PROPERTY_MARKER_STATUSES = {
-  sale: { label: 'Kauf oder Miete verfügbar', color: '#80e697', symbol: '+' },
-  own: { label: 'Dein Eigentum', color: '#85c8ff', symbol: '✓' },
-  rent: { label: 'Von dir gemietet', color: '#ffe085', symbol: 'M' },
-  rented: { label: 'Vermietet', color: '#b2bdcf', symbol: '×' },
-  owned: { label: 'Vergeben', color: '#b2bdcf', symbol: '×' },
+  sale: { label: 'Kauf verfügbar', color: '#4cd97b', symbol: '+' },
+  rentable: { label: 'Miete verfügbar', color: '#4da3ff', symbol: 'M' },
+  own: { label: 'Eigener Besitz', color: '#ffd23f', symbol: '✓' },
+  rent: { label: 'Von dir gemietet', color: '#b18cff', symbol: 'M' },
+  owned: { label: 'Nicht verfügbar', color: '#9aa3b2', symbol: '×' },
+  plot: { label: 'Freies Baugrundstück (virtuell)', color: '#ff9f43', symbol: '▲' },
 } as const;
+
+/** Filter der Immobilienmarker auf der Karte (leer = alles zeigen) */
+export const PROPERTY_FILTERS = [
+  { id: 'buy', label: 'Kaufen' }, { id: 'rent', label: 'Mieten' }, { id: 'flat', label: 'Wohnungen' }, { id: 'house', label: 'Häuser' },
+  { id: 'commercial', label: 'Gewerbe' }, { id: 'plot', label: 'Baugrundstücke' }, { id: 'mine', label: 'Eigene' },
+] as const;
+export type PropertyFilter = typeof PROPERTY_FILTERS[number]['id'];
+export function propertyPasses(object: GeoObj, active: ReadonlySet<PropertyFilter>, maxPrice: number, minArea: number) {
+  const e = object.extra ?? {};
+  const mine = e.marketStatus === 'own' || e.marketStatus === 'rent';
+  if (maxPrice > 0 && (e.buyGold ?? 0) > maxPrice) return false;
+  if (minArea > 0 && (e.areaM2 ?? 0) < minArea) return false;
+  if (!active.size) return true;
+  const kind = e.building === 'virtual_plot' ? 'plot' : ['apartments', 'dormitory'].includes(e.building) ? 'flat' : ['commercial', 'retail', 'office'].includes(e.building) ? 'commercial' : 'house';
+  const free = e.marketStatus === 'sale' || e.marketStatus === 'rentable' || e.marketStatus === 'plot';
+  const typeFilters = [...active].filter(f => ['flat', 'house', 'commercial', 'plot'].includes(f));
+  const modeFilters = [...active].filter(f => ['buy', 'rent', 'mine'].includes(f));
+  if (typeFilters.length && !typeFilters.includes(kind as PropertyFilter)) return false;
+  if (modeFilters.length) {
+    const okMode = modeFilters.some(f => f === 'mine' ? mine : f === 'buy' ? free && e.marketStatus !== 'rentable' || e.marketStatus === 'plot' : free && !!e.rentGold);
+    if (!okMode) return false;
+  }
+  return true;
+}
 
 export function propertyMarkerStatus(status: unknown) {
   return typeof status === 'string' && Object.hasOwn(PROPERTY_MARKER_STATUSES, status)

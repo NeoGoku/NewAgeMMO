@@ -62,6 +62,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   await restarted.load(queryPoint.lat, queryPoint.lon);
   ok(requestsAfterRestart === 0 && restarted.nearby(queryPoint.lat, queryPoint.lon, 1200)[0]?.id === 'osm:node:1', 'OSM-Import liest gespeicherte Regionen nach Neustart vor dem Netzabruf');
   const { geoObjects } = await import('../src/geo-world');
+  const { ensureTerrain } = await import('../src/geo-terrain');
+  await ensureTerrain(queryPoint.lat, queryPoint.lon, GEO.viewM + 2500); // Gelände (Vektorkacheln); bei Netzausfall gilt Ersatzgelände
   const firstArea = geoObjects(queryPoint.lat, queryPoint.lon, GEO.viewM, 1800000000000);
   const overlap = geoObjects(queryPoint.lat + .002, queryPoint.lon, GEO.viewM, 1800000000000);
   const byId = new Map(overlap.map(o => [o.id, o]));
@@ -163,6 +165,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   ok(geo.pending, 'Ungenauer GPS-Fix setzt keine Kartenposition');
   r = await req('geoPos', braunschweig);
   ok(r.t === 'ok' && geo.me?.lat === braunschweig.lat && geo.me?.lon === braunschweig.lon && geo.me?.regionLabel === 'Regionale Wildnis', 'Erster GPS-Fix verankert sofort in Braunschweig');
+  for (let i = 0; i < 60 && !(geo.objs.some((o: any) => o.k === 'npc') && geo.objs.some((o: any) => o.k === 'mob' && o.role === 'elite')); i++) await sleep(250); // Gelände wird asynchron geladen
   const localMobs = geo.objs.filter((o: any) => o.k === 'mob' && o.role === 'normal' && o.lvl <= 6 &&
     haversine(o.lat, o.lon, braunschweig.lat, braunschweig.lon) <= 160);
   ok(localMobs.length >= 2, 'Braunschweig hat mehrere Einsteiger-Monster innerhalb von 160 m');

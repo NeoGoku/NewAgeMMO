@@ -45,6 +45,11 @@ for (let t = 0; t < 10; t++) {
   NODES[`n_ore_${t}`] = { id: `n_ore_${t}`, prof: 'mining', tier: t, name: `${TIERS[t]}-Erzader`, yield: `m_ore_${t}`, kind: 'vein', color: '#b0b7c0' };
   NODES[`n_herb_${t}`] = { id: `n_herb_${t}`, prof: 'herbalism', tier: t, name: `${TIERS[t]}-Kräuter`, yield: `m_herb_${t}`, kind: 'herb', color: '#5ee06a' };
   NODES[`n_wood_${t}`] = { id: `n_wood_${t}`, prof: 'woodcutting', tier: t, name: `${TIERS[t]}-Baum`, yield: `m_wood_${t}`, kind: 'tree', color: '#a67c52' };
+  // Kartenressourcen (Gelände): Fischschwarm (Gewässer), Schrotthaufen (Gewerbe), Kristallader (Fels), Ätherquelle (besondere Orte)
+  NODES[`n_fish_${t}`] = { id: `n_fish_${t}`, prof: 'husbandry', tier: t, name: `${TIERS[t]}-Fischschwarm`, yield: 'm_fish', kind: 'herb', color: '#4aa8ff' };
+  NODES[`n_scrap_${t}`] = { id: `n_scrap_${t}`, prof: 'engineering', tier: t, name: `${TIERS[t]}-Schrotthaufen`, yield: 'm_scrap', kind: 'vein', color: '#7d8791' };
+  NODES[`n_gem_${t}`] = { id: `n_gem_${t}`, prof: 'mining', tier: t, name: `${TIERS[t]}-Kristallader`, yield: `m_gem_${t}`, kind: 'vein', color: '#7ad8ff' };
+  NODES[`n_ess_${t}`] = { id: `n_ess_${t}`, prof: 'alchemy', tier: t, name: `${TIERS[t]}-Ätherquelle`, yield: `m_ess_${t}`, kind: 'herb', color: '#c58bff' };
   NODES[`n_crate_${t}`] = { id: `n_crate_${t}`, prof: '', tier: t, name: 'Holzkiste', yield: 'gold', kind: 'crate', color: '#c8a46a' };
 }
 export const profExp = (l: number) => Math.floor(50 * Math.pow(l, 1.6));

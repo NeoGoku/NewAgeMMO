@@ -123,6 +123,9 @@ const CSS = `
 .geo .portal-destinations{display:grid;gap:6px;margin-top:8px;max-height:28vh;overflow:auto}
 `
 
+interface GeoZone { id: string; tier: number; lvl: [number, number]; name: string; label: string; bounds: [number, number, number, number] }
+const TIER_COLORS = ['#58d68d', '#5dade2', '#f4d03f', '#eb984e', '#e74c3c', '#bb8fce'];
+const zoneFeature = (z: GeoZone) => ({ type: 'Feature' as const, properties: { c: TIER_COLORS[z.tier - 1], t: `${z.name}\nLv ${z.lvl[0]}–${z.lvl[1]}` }, geometry: { type: 'Polygon' as const, coordinates: [[[z.bounds[0], z.bounds[1]], [z.bounds[2], z.bounds[1]], [z.bounds[2], z.bounds[3]], [z.bounds[0], z.bounds[3]], [z.bounds[0], z.bounds[1]]]] } });
 export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; controlsBlocked?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -154,6 +157,8 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const routePin = useRef<maplibregl.Marker | null>(null);
   const [mapSettings, setMapSettings] = useState(false);
   const [markerLegend, setMarkerLegend] = useState(false);
+  const [zones, setZones] = useState<GeoZone[]>([]);
+  const [showZones, setShowZones] = useState(() => { try { return localStorage.getItem('nam.map.zones') === '1'; } catch { return false; } });
   const [markerFilters, setMarkerFilters] = useState<ReadonlySet<MarkerCategory>>(() => new Set(markerCategoryKeys));
   const [clusterSelection, setClusterSelection] = useState<MarkerTarget[]>([]);
   blockedRef.current ||= mapSettings || markerLegend;
@@ -188,7 +193,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const onMode = () => { choose(modeRef.current === 'gps' ? 'virtual' : 'gps'); };
     const onStop = () => { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); };
     const onWipe = () => { void wipe(); };
-    const onRecenter = () => { const p = myPos(); if (p && mapRef.current) { followRef.current = true; setFollow(true); mapRef.current.easeTo({ center: [p.lon, p.lat], zoom: mapRef.current.getZoom() }); } };
+    const onRecenter = () => { const p = myPos(); if (p && mapRef.current) { followRef.current = true; setFollow(true); const z = mapRef.current.getZoom(); mapRef.current.easeTo({ center: [p.lon, p.lat], zoom: z >= 17 && z <= 18 ? z : 17.5, duration: 750, essential: true, easing: t => 1 - Math.pow(1 - t, 3) }); } };
     const onWalk = (e: Event) => { const d = (e as CustomEvent).detail; if (d) walkTo(d.lat, d.lon, d.name, d.address); };
     const onQuest = (e: Event) => {
       const detail = (e as CustomEvent).detail as { id: string; role: QuestPinRole; navigate: boolean };
@@ -215,7 +220,11 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const bounds = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => map.resize());
     bounds?.observe(box.current!);
     map.on('load', () => {
-      for (const id of ['cities', 'territories', 'ranges', 'line', 'quest-area', 'quest-route']) map.addSource(id, { type: 'geojson', data: fc([]) });
+      for (const id of ['zones', 'cities', 'territories', 'ranges', 'line', 'quest-area', 'quest-route']) map.addSource(id, { type: 'geojson', data: fc([]) });
+      // Gebietsstufen (optional): unterhalb aller Spiel-Layer
+      map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none' }, paint: { 'fill-color': ['get', 'c'], 'fill-opacity': 0.12 } });
+      map.addLayer({ id: 'zones-line', type: 'line', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none' }, paint: { 'line-color': ['get', 'c'], 'line-width': 1.5, 'line-opacity': 0.8, 'line-dasharray': [3, 2] } });
+      map.addLayer({ id: 'zones-label', type: 'symbol', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none', 'text-field': ['get', 't'], 'text-font': ['Noto Sans Bold'], 'text-size': 11, 'text-allow-overlap': false }, paint: { 'text-color': ['get', 'c'], 'text-halo-color': '#0b0f1e', 'text-halo-width': 1.4 } });
       map.addLayer({ id: 'cities-fill', type: 'fill', source: 'cities', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.08 } });
       map.addLayer({ id: 'cities-line', type: 'line', source: 'cities', paint: { 'line-color': '#22d3ee', 'line-width': 2, 'line-dasharray': [3, 2] } });
       map.addLayer({ id: 'territories-fill', type: 'fill', source: 'territories', paint: { 'fill-color': '#d197ff', 'fill-opacity': 0.14 } });
@@ -231,13 +240,13 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       redraw.current();
     });
     map.on('error', event => {
-      if ('sourceId' in event && (event.sourceId === 'satellite' || event.sourceId === 'satellite-dop')) {
+      if ('sourceId' in event && (event.sourceId === 'satellite' || String(event.sourceId).startsWith('satellite-dop'))) {
         setMapError('Luftbilddetails teilweise nicht verfügbar.');
       } else if (preferencesRef.current.kind !== 'satellite') {
         setMapError('Kartendaten teilweise nicht verfügbar.');
       }
     });
-    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'satellite-dop', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
+    map.on('sourcedata', event => { if (event.isSourceLoaded && (['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '') || String(event.sourceId).startsWith('satellite-dop'))) setMapError(''); });
     map.on('moveend', () => {
       redrawMarkers.current();
       // Satellit ohne zulässige Detailquelle: Hinweis statt stillschweigend unscharfer Bilder
@@ -271,6 +280,15 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const showZonesRef = useRef(showZones);
+  showZonesRef.current = showZones;
+  useEffect(() => {
+    try { localStorage.setItem('nam.map.zones', showZones ? '1' : '0'); } catch { /* ohne Speicher */ }
+    const map = mapRef.current;
+    if (!map?.getLayer('zones-fill')) return;
+    for (const id of ['zones-fill', 'zones-line', 'zones-label']) map.setLayoutProperty(id, 'visibility', showZones ? 'visible' : 'none');
+    (map.getSource('zones') as maplibregl.GeoJSONSource | undefined)?.setData(fc(showZones ? zones.map(zoneFeature) : []));
+  }, [showZones, zones]);
   useEffect(() => {
     saveMapPreferences({ ...preferences, follow });
   }, [preferences, follow]);
@@ -564,6 +582,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         centered.current = false;
       } else if (me && typeof me.lat === 'number') meRef.current = me;
       objsRef.current = (m.objs as GeoObj[]) || [];
+      if (Array.isArray(m.zones)) setZones(previous => JSON.stringify(previous.map(z => z.id)) === JSON.stringify((m.zones as GeoZone[]).map(z => z.id)) ? previous : m.zones as GeoZone[]);
       playersRef.current = (m.players as GeoPlayer[]) || [];
       targetRef.current = me?.dest ?? null;
       if (me?.travel !== undefined) setTravel(me.travel);
@@ -663,6 +682,8 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const dist = o && me ? haversine(me.lat, me.lon, o.lat, o.lon) : null;
   const playerDist = p && me ? haversine(me.lat, me.lon, p.lat, p.lon) : null;
   const inRange = !!o && dist !== null && dist <= GEO.interactM + (o.r || 0);
+  const hereAt = meRef.current;
+  const zoneHere = hereAt ? zones.find(z => hereAt.lon >= z.bounds[0] && hereAt.lon <= z.bounds[2] && hereAt.lat >= z.bounds[1] && hereAt.lat <= z.bounds[3]) : undefined;
   const rejected = info.flags.some(f => f === 'speed' || f === 'teleport');
   const questDistance = questTarget && me ? haversine(me.lat, me.lon, questTarget.lat, questTarget.lon) : null;
   const portal = o && destinations?.portal === o.id ? destinations : null;
@@ -681,8 +702,9 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           <div>{mode === 'gps' ? 'GPS' : 'Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h{walking ? ' · ' + (eta > 60 ? Math.ceil(eta / 60) + ' Min.' : eta + ' Sek.') : ''}</div>
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
+          {zoneHere && <div style={{ color: TIER_COLORS[zoneHere.tier - 1] }}>{zoneHere.name} · empfohlen Lv {zoneHere.lvl[0]}–{zoneHere.lvl[1]}{zoneHere.label ? ` · ${zoneHere.label}` : ''}</div>}
           {mapError && <div>{mapError}</div>}
-          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen) – Straßenkarte als Ersatz.</div>}
+          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen, Thüringen, Hessen, Rheinland-Pfalz, Schleswig-Holstein, Mecklenburg-Vorpommern) – Straßenkarte als Ersatz.</div>}
           {!info.hasMe && <div>Warte auf Position…</div>}
         </div>
 
@@ -706,6 +728,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       </div>
       {markerLegend && <section id="marker-legend" className="marker-legend" aria-labelledby="marker-legend-title">
         <div className="marker-legend-head"><h3 id="marker-legend-title">Kartenfilter und Legende</h3><button type="button" onClick={() => setMarkerLegend(false)} aria-label="Kartenfilter schließen">×</button></div>
+        <label className="zone-toggle"><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Gebietsgrenzen und empfohlene Stufen</label>
         <div className="marker-legend-actions">
           <button type="button" onClick={() => { setMarkerFilters(new Set(markerCategoryKeys)); setClusterSelection([]); }}>Alle anzeigen</button>
           <button type="button" onClick={() => { setMarkerFilters(new Set()); setClusterSelection([]); }}>Alle ausblenden</button>

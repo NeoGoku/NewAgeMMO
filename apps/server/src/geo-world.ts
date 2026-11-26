@@ -1,9 +1,11 @@
 import { territoryObjects } from './guild-territories';
 import { GEO, cellId, hash32, haversine, rad, rng, type GeoObj } from '@nam/shared';
-import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NODES, NPCS, placeNear, type MobDef } from '@nam/game-data';
+import { GEO_ANCHORS, GEO_REGIONAL_NPCS, LOCS, MOBS, NPCS, placeNear, type MobDef } from '@nam/game-data';
 import { G, now } from './state';
 import { osmObjects } from './geo-osm';
 import { propertyObjects } from './geo-property-regions';
+import { npcsNear, pickMob, populateCell, tileFeaturesNear } from './geo-spawn';
+import { regionAt, terrainAt } from './geo-terrain';
 
 export const anchorList = Object.entries(GEO_ANCHORS);
 const nearestAnchor = (lat: number, lon: number) => {
@@ -16,12 +18,6 @@ const nearestAnchor = (lat: number, lon: number) => {
   return { id: best[0], distance, radius: best[1][2] };
 };
 
-const NODE_KINDS = ['ore', 'herb', 'wood'];
-const BY_ROLE = {
-  normal: Object.values(MOBS).filter(m => m.role === 'normal'),
-  elite: Object.values(MOBS).filter(m => m.role === 'elite'),
-  boss: Object.values(MOBS).filter(m => m.role === 'boss'),
-};
 const npcObject = (id: string, lat: number, lon: number, marker: string): GeoObj => {
   const npc = NPCS[id];
   return { id: marker, k: 'npc', def: id, lat, lon, name: `${npc.name} · ${npc.title}`, r: 40, extra: { loc: npc.loc, services: npc.services } };
@@ -69,40 +65,14 @@ function* nearbyCells(lat: number, lon: number, radius: number): Generator<Cell>
   }
 }
 const cellPoint = (c: Cell, uy: number, ux: number) => [(c.row + uy) * GEO.cellDeg, (c.column + ux) * c.width - 180] as const;
-function regionalNpc(c: Cell): GeoObj | undefined {
-  if (wrap(c.row, 3) !== 0 || c.column % 3 !== 0) return;
-  const id = cellId(c.row, c.column);
-  const seed = hash32('npc:' + id);
-  const [lat, lon] = cellPoint(c, .32, .68);
-  if (nearAnchor(lat, lon)) return;
-  return npcObject(GEO_REGIONAL_NPCS[seed % GEO_REGIONAL_NPCS.length], lat, lon, 'r:npc:' + id);
-}
-
 const nearAnchor = (lat: number, lon: number) => anchorList.some(([, a]) => haversine(lat, lon, a[0], a[1]) <= a[2] + 300);
 export function regionalNpcNearby(id: string, lat: number, lon: number, radius: number) {
-  if (!GEO_REGIONAL_NPCS.includes(id)) return false;
-  for (const cell of nearbyCells(lat, lon, radius)) {
-    const npc = regionalNpc(cell);
-    if (npc?.def === id && haversine(lat, lon, npc.lat, npc.lon) <= radius) return true;
-  }
-  return false;
+  return GEO_REGIONAL_NPCS.includes(id) && npcsNear(lat, lon, radius).some(npc => npc.def === id);
 }
-function regionalLevel(lat: number, lon: number, seed: number) {
+/** Selbst geschriebene Zonen (Städte) behalten ihre Levelvorgabe */
+function authoredLevel(lat: number, lon: number) {
   const anchor = nearestAnchor(lat, lon);
-  if (anchor.distance <= anchor.radius + 1800) return LOCS[anchor.id].lvl[0];
-  // Regions without authored zones have starter cells and intermittent tougher encounters.
-  return 1 + seed % 4;
-}
-function selectMob(role: MobDef['role'], level: number, seed: number) {
-  const pool = BY_ROLE[role];
-  let bestDistance = Infinity;
-  let best: MobDef[] = [];
-  for (const mob of pool) {
-    const distance = Math.abs(mob.lvl - level);
-    if (distance < bestDistance) { bestDistance = distance; best = []; }
-    if (distance === bestDistance) best.push(mob);
-  }
-  return best[seed % best.length];
+  return anchor.distance <= anchor.radius + 1800 ? LOCS[anchor.id].lvl[0] : undefined;
 }
 
 export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now()): GeoObj[] {
@@ -120,43 +90,24 @@ export function geoObjects(lat: number, lon: number, radius = GEO.viewM, t = now
   for (const cell of nearbyCells(lat, lon, radius)) {
     const id = cellId(cell.row, cell.column);
     const seed = hash32(id);
-    const roll = rng(hash32(id + ':' + bucket));
     const [clat, clon] = cellPoint(cell, .5, .5);
     if (haversine(lat, lon, clat, clon) > radius + 210) continue;
-    const level = regionalLevel(clat, clon, seed);
-    for (let slot = 0; slot < 4; slot++) {
-      const y = .25 + Math.floor(slot / 2) * .5 + (roll() - .5) * .09;
-      const x = .25 + (slot % 2) * .5 + (roll() - .5) * .09;
-      const [mlat, mlon] = cellPoint(cell, y, x);
-      const normal = selectMob('normal', Math.max(1, level + Math.floor(roll() * 3) - 1), seed + slot);
-      keep(mobObject(normal, mlat, mlon, `m:${id}:${slot}:${bucket}`));
-    }
-    if (seed % 4 === 0) {
-      const def = 'n_' + NODE_KINDS[hash32('node:' + id) % NODE_KINDS.length] + '_' + Math.min(9, Math.floor(level / 10));
-      const [nlat, nlon] = cellPoint(cell, .24, .22);
-      keep({ id: `n:${id}:${bucket}`, k: 'node', def, lat: nlat, lon: nlon, name: NODES[def].name });
-    }
-    const npc = regionalNpc(cell);
-    if (npc) keep(npc);
-    if (seed % 13 === 0) {
-      const [elat, elon] = cellPoint(cell, .73, .74);
-      keep(mobObject(selectMob('elite', level + 4, seed), elat, elon, `e:${id}:${bucket}`));
-    }
-    if (seed % 151 === 0 && !nearAnchor(clat, clon)) {
-      const boss = selectMob('boss', level + 36 + (seed % 3) * 18, hash32('boss:' + id));
-      keep(mobObject(boss, clat, clon, `b:${id}:${hour}`));
-    }
+    populateCell(cell, (uy, ux) => cellPoint(cell, uy, ux), { authoredLevel, keep: object => keep(object) });
     if (wrap(cell.row, 4) === 0 && cell.column % 4 === 0 && (Math.floor(t / 60000) + seed % 60) % 60 < 20) {
       const [eventLat, eventLon] = cellPoint(cell, .44, .58);
-      const invader = selectMob('elite', level + 2, hash32('storm:' + id));
-      keep({ ...mobObject(invader, eventLat, eventLon, `storm:${id}:${Math.floor((t + (seed % 60) * 60000) / 36e5)}`),
-        name: 'Äthersturm · ' + invader.name, extra: { regionalEvent: 'aetherstorm' } });
+      if (terrainAt(eventLat, eventLon) !== 1) {
+        const invader = pickMob('elite', (authoredLevel(eventLat, eventLon) ?? regionAt(eventLat, eventLon)?.lvl[0] ?? 1) + 2, hash32('storm:' + id));
+        keep({ ...mobObject(invader, eventLat, eventLon, `storm:${id}:${Math.floor((t + (seed % 60) * 60000) / 36e5)}`),
+          name: 'Äthersturm · ' + invader.name, extra: { regionalEvent: 'aetherstorm' } });
+      }
     }
     if (seed % 101 === 0) {
       const [plat, plon] = cellPoint(cell, .71, .26);
-      keep({ id: 'p:' + id, k: 'poi', def: 'treasure', lat: plat, lon: plon, name: 'Magische Quelle' });
+      if (terrainAt(plat, plon) !== 1) keep({ id: 'p:' + id, k: 'poi', def: 'treasure', lat: plat, lon: plon, name: 'Magische Quelle' });
     }
   }
+  for (const npc of npcsNear(lat, lon, radius)) keep(npc);
+  for (const feature of tileFeaturesNear(lat, lon, radius)) keep(feature);
   for (const [id, a] of anchorList) {
     keep({ id: 'c:' + id, k: 'city', def: id, lat: a[0], lon: a[1], name: LOCS[id].name, lvl: LOCS[id].lvl[0], r: a[2], extra: { kind: LOCS[id].kind } }, radius + a[2]);
   }
