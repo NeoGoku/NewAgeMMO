@@ -1,6 +1,11 @@
 name: OSM-Katalog und Gehwegenetz Braunschweig
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      aerial_probe:
+        description: Nur die angebotenen Luftbilddienste prüfen
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -15,10 +20,16 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      - name: Luftbilder mit Pages-CORS prüfen
+        if: inputs.aerial_probe
+        run: python3 scripts/check-aerial-sources.py
       - uses: actions/setup-node@v4
+        if: ${{ !inputs.aerial_probe }}
         with: { node-version: 22, cache: npm }
-      - run: npm ci --no-audit --no-fund
+      - if: ${{ !inputs.aerial_probe }}
+        run: npm ci --no-audit --no-fund
       - name: OSM-Regionalextrakt von Geofabrik laden
+        if: ${{ !inputs.aerial_probe }}
         timeout-minutes: 6
         run: |
           sudo apt-get install -y osmium-tool
@@ -26,6 +37,7 @@ jobs:
             https://download.geofabrik.de/europe/germany/niedersachsen-latest.osm.pbf \
             --output "$RUNNER_TEMP/niedersachsen.osm.pbf"
       - name: Gebäude und Gehwegenetz für Braunschweig extrahieren
+        if: ${{ !inputs.aerial_probe }}
         timeout-minutes: 3
         shell: bash
         run: |
@@ -48,6 +60,7 @@ jobs:
           fi
           printf '%s\n' "$message"
       - name: Öffentliche Satellitenkachel prüfen
+        if: ${{ !inputs.aerial_probe }}
         continue-on-error: true
         run: |
           bbox=1171975,6844000,1174430,6846455
@@ -57,6 +70,7 @@ jobs:
           grep -Ei '^access-control-allow-origin: (\*|https://neogoku.github.io)' "$RUNNER_TEMP/satellite-headers"
           file "$RUNNER_TEMP/satellite.jpg" | grep 'JPEG image data'
       - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.aerial_probe }}
         with:
           name: braunschweig-osm-assets
           path: |
@@ -65,6 +79,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Verifizierten Katalog als Git-Snapshot bereitstellen
+        if: ${{ !inputs.aerial_probe }}
         env:
           OSM_SNAPSHOT_BRANCH: osm-braunschweig-snapshot
         run: |
