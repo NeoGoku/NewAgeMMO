@@ -1,4 +1,4 @@
-import { ACC_RE, ATTRS, CLASS_IDS, NAME_RE, validPropertyId, validPropertyOwnership, type ClassId } from '@nam/shared';
+import { ACC_RE, ATTRS, CLASS_IDS, NAME_RE, validPropertyId, validPropertyLease, validPropertyOwnership, type ClassId } from '@nam/shared';
 import { FURN, ITEMS, LOCS, RECIPES, SPECIES, validGeoTerritoryId } from '@nam/game-data';
 
 type Doc = Record<string, unknown>;
@@ -50,6 +50,7 @@ function character(c: unknown, key: string, owners: Set<unknown>) {
     list(c.mail, m => record(m) && id(m.id) && text(m.from) && text(m.subject) && numbers(m, ['gold', 't']) && items(m.items)) &&
     fields(c, ['activePet', 'guildId', 'houseId'], value => value === null || id(value)) &&
     (c.geoProperty === undefined || (id(c.houseId) && validPropertyOwnership(c.geoProperty))) &&
+    (c.geoLease === undefined || (c.geoProperty === undefined && validPropertyLease(c.geoLease) && c.houseId === c.geoLease.houseId)) &&
     record(c.settings) && fields(c.settings, ['autoPotion', 'autoLoot', 'autoQuest'], value => typeof value === 'boolean');
 }
 
@@ -63,6 +64,7 @@ function guild(g: unknown, key: string) {
 function house(h: unknown, key: string) {
   return docId(h, key) && ['player', 'guild'].includes(String(h.kind)) && fields(h, ['ownerId', 'ownerName', 'style', 'visit'], text) &&
     (h.propertyId === undefined || (h.kind === 'player' && validPropertyId(h.propertyId))) &&
+    (h.rentalInterior === undefined || (h.rentalInterior === true && validPropertyId(h.propertyId))) &&
     numbers(h, ['slot', 'floors', 'created']) && items(h.stash) &&
     list(h.furniture, f => record(f) && id(f.id) && ownId(FURN, f.furn) && numbers(f, ['x', 'y', 'rot', 'floor']));
 }

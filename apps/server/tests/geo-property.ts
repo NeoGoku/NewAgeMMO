@@ -89,6 +89,7 @@ class FailableStore extends MemoryStore {
 const store = new FailableStore();
 const core = await createCore(store, { propertyCatalog: imported });
 let buyerId = '';
+let restoredTenantId = '';
 try {
   const player = async (name: string) => {
     const socket = new Socket();
@@ -106,6 +107,8 @@ try {
   };
   let a = await player('MaklerOne');
   let b = await player('MaklerTwo');
+  const contender = await player('MaklerThree');
+  Object.assign(contender.active.geo!, location);
   const id = 'property:osm:way:1234';
   const details = await a.socket.req('geoPropertyList', { id });
   assert.equal(details.t, 'ok', 'the configured OSM footprint is visible in the catalog');
@@ -177,6 +180,43 @@ try {
     assert.equal(a.active.c.gold, before, 'Mietvertrag endet ohne Erstattung');
   }
   assert.equal((await b.socket.req('geoPropertyBuy', { id })).t, 'ok', 'sold property becomes available again');
+  const tenantGold = a.active.c.gold;
+  assert.equal((await a.socket.req('geoPropertyLeaseOffer', { id, on: true })).t, 'err', 'a visitor cannot advertise another owner’s house');
+  assert.equal((await b.socket.req('geoPropertyLeaseOffer', { id, on: true })).t, 'ok', 'the owner advertises the property');
+  const rental = (await a.socket.req('geoPropertyList', { id })).list[0];
+  assert.equal(rental.marketStatus, 'rentable');
+  assert.equal((await a.socket.req('geoPropertyBuy', { id })).t, 'err', 'the owner listing offers only a lease');
+  store.failNextFlush = true;
+  assert.equal((await a.socket.req('geoPropertyRent', { id })).t, 'err');
+  assert.equal(a.active.c.gold, tenantGold, 'a failed payment leaves both characters unchanged');
+  assert.equal((await store.get('chars', b.active.id)).mail.length, 0);
+  const [firstTenant, secondTenant] = await Promise.all([
+    a.socket.req('geoPropertyRent', { id, rentGold: 1 }),
+    contender.socket.req('geoPropertyRent', { id, rentGold: 1 }),
+  ]);
+  assert.deepEqual([firstTenant.t, secondTenant.t].sort(), ['err', 'ok'], 'the same private offer cannot be leased twice');
+  const renting = firstTenant.t === 'ok' ? a : contender;
+  const previousGold = renting === a ? tenantGold : 10000;
+  assert.equal(renting.active.c.gold, previousGold - rental.rentGold);
+  assert.equal((await store.get('chars', renting.active.id)).geoLease.ownerId, b.active.id);
+  assert.equal((await store.get('chars', b.active.id)).mail[0].gold, rental.rentGold);
+  assert.equal((await b.socket.req('houseEnter', { id: b.active.c.houseId })).t, 'err', 'landlord access is suspended during the lease');
+  assert.equal((await renting.socket.req('houseEnter', { id: renting.active.c.houseId })).t, 'ok');
+  const leaseHouse = G.houses.get(renting.active.c.houseId!)!;
+  assert.notEqual(leaseHouse.id, b.active.c.houseId);
+  await renting.socket.req('houseLeave');
+  leaseHouse.garden = { plantedAt: Date.now() };
+  assert.equal((await renting.socket.req('geoPropertyEndLease', { id })).t, 'err', 'tenant items or garden cannot be lost at lease end');
+  assert.equal((await b.socket.req('geoPropertyLeaseOffer', { id, on: false })).t, 'ok', 'owner can withdraw without evicting the tenant');
+  assert.equal((await renting.socket.req('geoPropertyRenew', { id })).t, 'ok', 'current lease retains its agreed renewal terms');
+  assert.equal((await store.get('chars', b.active.id)).mail.length, 2);
+  leaseHouse.garden = null;
+  assert.equal((await renting.socket.req('geoPropertyEndLease', { id })).t, 'ok');
+  assert.equal(renting.active.c.geoLease, undefined);
+  assert.equal((await renting.socket.req('geoPropertyRent', { id })).t, 'err', 'the withdrawn offer is unavailable when the lease ends');
+  assert.equal((await b.socket.req('geoPropertyLeaseOffer', { id, on: true })).t, 'ok');
+  assert.equal((await contender.socket.req('geoPropertyRent', { id })).t, 'ok');
+  restoredTenantId = contender.active.id;
   const plotId = 'property:osm:way:1235';
   const plot = (await a.socket.req('geoPropertyList', { id: plotId })).list[0];
   assert.equal(plot.building, 'virtual_plot');
@@ -203,6 +243,9 @@ try {
   const owner = G.chars.get(buyerId)!;
   const house = G.houses.get(owner.houseId!);
   assert.ok(owner.geoProperty && house?.propertyId === owner.geoProperty.id, 'restart restores the interior even without an imported catalog');
+  const tenant = G.chars.get(restoredTenantId)!;
+  assert.equal(tenant.geoLease?.ownerId, owner.id);
+  assert.equal(G.houses.get(tenant.houseId!)?.rentalInterior, true, 'restart restores the tenant’s isolated interior');
 } finally {
   await restarted.shutdown();
 }

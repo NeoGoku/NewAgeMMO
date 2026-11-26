@@ -6,7 +6,7 @@ export const GEO_ANCHORS: Record<string, [number, number, number]> = {
   schattenmoor: [53.2500, 8.9500, 3000], himmelsturm: [47.4210, 10.9850, 800], voidherz: [27.9881, 86.9250, 3000],
 };
 export const GEO_START: [number, number] = [52.5200, 13.4050];
-export const GEO_REGIONAL_NPCS = ['mira', 'torben', 'orwin', 'ranger', 'minenmeister', 'lena'];
+export const GEO_REGIONAL_NPCS = ['mira', 'torben', 'orwin', 'ranger', 'minenmeister', 'lena', 'schmied', 'schneider', 'alchemist', 'koch', 'baumeister', 'ingenieur', 'makler', 'bankier', 'petra', 'vex', 'gildmeister'];
 const h32 = (s: string) => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; };
 /** Deterministische Kartenposition (lat, lon) für Objekte einer Stadt/Zone (NPCs, Werkstätten). */
 export function placeNear(loc: string, key: string): [number, number] {

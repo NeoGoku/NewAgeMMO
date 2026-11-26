@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { makeStore } from './store-node'; import { G } from './state'; import { createCore, log } from './core'; import { LOCS, NPCS } from '@nam/game-data';
 import { configureRegionalProperties } from './geo-property-regions';
+import { configureTerrain } from './geo-terrain';
 import { configureOsm } from './geo-osm';
 import { WalkingNetwork, WALKING_NETWORK_MAX_BYTES } from './walking-network';
 import { readPropertyCatalog } from './property-file';
@@ -19,6 +20,7 @@ async function main() {
   const core = await createCore(store, { propertyCatalog: await readPropertyCatalog(catalogPath),
     adminUsers: () => process.env.ADMIN_USERS, routingUrl: process.env.VALHALLA_URL, walkingNetwork });
   const overpass = process.env.OSM_OVERPASS_URL ?? 'https://overpass-api.de/api/interpreter';
+  configureTerrain(process.env.OSM_TERRAIN_ENABLED !== '0');
   configureOsm(overpass, store.osmCache);
   configureRegionalProperties(process.env.PROPERTY_OVERPASS_URL ?? overpass);
   const server = http.createServer((req, res) => {

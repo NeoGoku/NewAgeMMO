@@ -1,6 +1,6 @@
 import { LOCS, NPCS } from '@nam/game-data';
-import { CLASS_BASE } from '@nam/shared';
-import { G, now, send, sys, clamp, toLoc, type Player } from './state';
+import { CLASS_BASE, type GeoObj } from '@nam/shared';
+import { G, now, send, sys, clamp, toLoc, type DungeonState, type GeoChallenge, type Player } from './state';
 import { GEO_ANCHORS } from '@nam/game-data';
 import { recalc } from './chars';
 import { questEvent, autoStartHidden } from './quests';
@@ -42,22 +42,54 @@ export function enterScene(p: Player, locId: string) { setLocSilent(p, locId); p
 export function exitScene(p: Player) { p.inScene = false; p.mapEncounter = undefined; p.target = null; p.auto = false; p.autoFarm = null; p.gather = null; p.pending = null; send(p, { t: 'scene', on: false }); }
 
 /** Only the party's current members can enter its copy of the geographic dungeon. */
-export function enterPartyDungeon(p: Player, locId: string): string | undefined {
+export function enterPartyDungeon(p: Player, locId: string, entranceId?: string): string | undefined {
   const party = p.partyId ? G.parties.get(p.partyId) : undefined;
   if (!party || party.members.length < 2 || !party.members.includes(p.id)) return 'Für die Gruppeninstanz brauchst du eine Gruppe';
   const def = LOCS[locId];
   if (!def || (def.kind !== 'boss' && def.theme !== 'dungeon')) return 'Keine Gruppeninstanz für dieses Ziel';
-  if (p.dungeon || p.mapEncounter || p.dead || p.inScene || p.travel || p.houseId || p.duel || p.trade || p.combatUntil > now()) return 'Gruppeninstanz gerade nicht möglich';
+  if (instanceBlocked(p)) return 'Gruppeninstanz gerade nicht möglich';
 
-  const key = party.id + ':' + locId;
+  const key = party.id + ':' + locId + (entranceId ? ':' + entranceId : '');
   const dungeon = G.dungeons.get(key) ?? newDungeon(key, def);
-  G.dungeons.set(key, dungeon);
+  joinDungeon(p, dungeon);
+}
+
+export function enterRegionalDungeon(p: Player, locId: string, entranceId: string): string | undefined {
+  if (instanceBlocked(p)) return 'Dungeon gerade nicht möglich';
+  joinDungeon(p, newDungeon('solo:' + p.id + ':' + entranceId, LOCS[locId]));
+}
+
+export function enterGeoChallenge(p: Player, marker: GeoObj, locId: string): string | undefined {
+  if (instanceBlocked(p)) return 'Teilnahme gerade nicht möglich';
+  const endsAt = marker.extra?.endsAt;
+  if (typeof endsAt !== 'number' || endsAt <= now()) return 'Diese Begegnung ist abgelaufen';
+  const key = 'challenge:' + marker.id + ':' + endsAt;
+  if ((p.c.geoChallengeRewards?.[key] ?? 0) > now()) return 'Diese Begegnung hast du bereits abgeschlossen';
+  const challenge: GeoChallenge = {
+    markerId: marker.id, target: marker.def, title: marker.name, kind: marker.role === 'boss' ? 'boss' : 'event', endsAt,
+    point: { lat: marker.lat, lon: marker.lon },
+  };
+  const dungeon = G.dungeons.get(key) ?? newDungeon(key, LOCS[locId], challenge);
+  if (dungeon.challenge?.completed) return 'Diese Begegnung wurde bereits abgeschlossen';
+  joinDungeon(p, dungeon);
+  const mob = dungeon.mobs.find(m => !m.add && !m.dead);
+  if (mob) {
+    mob.threat[p.id] = 1;
+    p.target = mob.uid;
+    p.auto = true;
+  }
+  sys(p, `${marker.name}: Trage zum Kampf bei, um eine Belohnung zu erhalten.`, 'boss');
+}
+
+const instanceBlocked = (p: Player) => p.dungeon || p.mapEncounter || p.dead || p.inScene || p.travel || p.houseId || p.duel || p.trade || p.combatUntil > now();
+function joinDungeon(p: Player, dungeon: DungeonState) {
+  G.dungeons.set(dungeon.key, dungeon);
   G.locs.get(p.loc)?.players.delete(p);
   p.dungeon = { dungeon, origin: p.loc, x: p.x, y: p.y };
-  p.loc = locId;
+  p.loc = dungeon.id;
   dungeon.players.add(p);
   p.gather = p.pending = null;
-  enterScene(p, locId);
+  enterScene(p, dungeon.id);
 }
 
 export function leaveDungeon(p: Player): boolean {

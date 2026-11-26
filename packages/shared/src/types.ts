@@ -1,4 +1,4 @@
-import type { GeoPropertyOwnership } from './geo-property';
+import type { GeoPropertyLease, GeoPropertyOwnership } from './geo-property';
 import type { SavedGeoTrip } from './geo';
 
 export type ClassId = 'dark_mage'|'light_mage'|'archer'|'shield_sword'|'dual_sword'|'healer'|'summoner'|'tank';
@@ -37,9 +37,10 @@ export interface Character {
   inventory: ItemInst[]; stash: ItemInst[]; equipment: Partial<Record<Slot, ItemInst>>; hotbar: (string|null)[];
   quests: Record<string, QuestState>; questsDone: string[]; dailyReset: number; rep: Record<string, number>; choices: Record<string, string>;
   prof: Record<string, { lvl: number; exp: number }>; pets: PetInst[]; activePet: string|null; summons: string[];
-  craftJobs: CraftJob[]; mail: MailItem[]; friends: string[]; guildId: string|null; houseId: string|null; geoProperty?: GeoPropertyOwnership;
+  craftJobs: CraftJob[]; mail: MailItem[]; friends: string[]; guildId: string|null; houseId: string|null; geoProperty?: GeoPropertyOwnership; geoLease?: GeoPropertyLease;
   kills: Record<string, number>; discovered: string[]; settings: { autoPotion: boolean; autoLoot: boolean; autoQuest: boolean }; arenaPts: number; honor: number;
   created: number; lastSeen: number; playtime: number; titles: string[];
+  geoChallengeRewards?: Record<string, number>;
   geo?: { consent: boolean; visible: boolean; qlat: number; qlon: number; gpsM: number; dayM: number; day: number; positionSet?: boolean; gpsFix?: { lat: number; lon: number; at: number }; gpsStrikes?: number[]; gpsLockUntil?: number; trip?: SavedGeoTrip };
 }
 export interface MobFamily { id: string; name: string }

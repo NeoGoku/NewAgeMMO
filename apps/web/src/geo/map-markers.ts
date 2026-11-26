@@ -26,14 +26,18 @@ export type MarkerCategory = keyof typeof MARKER_CATEGORIES;
 const questGivers = new Set(Object.values(QUESTS).filter(quest => quest.type !== 'hidden').map(quest => quest.giver));
 
 export const PROPERTY_MARKER_STATUSES = {
-  sale: { label: 'Kauf oder Miete verfügbar', color: '#80e697', symbol: '+' },
-  own: { label: 'Dein Eigentum', color: '#85c8ff', symbol: '✓' },
-  rent: { label: 'Von dir gemietet', color: '#ffe085', symbol: 'M' },
-  rented: { label: 'Vermietet', color: '#b2bdcf', symbol: '×' },
-  owned: { label: 'Vergeben', color: '#b2bdcf', symbol: '×' },
+  sale: { label: 'Kauf verfügbar', color: '#4cd97b', symbol: '+' },
+  rentable: { label: 'Miete verfügbar', color: '#ffd23f', symbol: 'M' },
+  own: { label: 'Eigener Besitz', color: '#78b9ff', symbol: '✓' },
+  rent: { label: 'Von dir gemietet', color: '#7de7e8', symbol: '↻' },
+  owned: { label: 'Nicht verfügbar', color: '#9aa3b2', symbol: '×' },
+  plot: { label: 'Freies Baugrundstück (virtuell)', color: '#4cd97b', symbol: '▲' },
 } as const;
 
-export function propertyMarkerStatus(status: unknown) {
+export function propertyMarkerStatus(status: unknown, rentGold?: number) {
+  if (status === 'sale' && rentGold !== undefined && rentGold > 0) {
+    return { ...PROPERTY_MARKER_STATUSES.sale, label: 'Kauf oder Miete verfügbar' };
+  }
   return typeof status === 'string' && Object.hasOwn(PROPERTY_MARKER_STATUSES, status)
     ? PROPERTY_MARKER_STATUSES[status as keyof typeof PROPERTY_MARKER_STATUSES] : undefined;
 }

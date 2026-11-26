@@ -30,7 +30,7 @@ const router = createServer(async (req, res) => {
 await new Promise<void>(resolve => router.listen(0, '127.0.0.1', resolve));
 const routerAddress = router.address();
 if (!routerAddress || typeof routerAddress === 'string') throw new Error('Keine Test-Routingadresse');
-const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '', VALHALLA_URL: `http://127.0.0.1:${routerAddress.port}` }, stdio: 'ignore' });
+const srv = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, PORT: String(PORT), DATA_DIR: dir, OSM_OVERPASS_URL: '', OSM_TERRAIN_ENABLED: '0', VALHALLA_URL: `http://127.0.0.1:${routerAddress.port}` }, stdio: 'ignore' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0; const ok = (c: any, m: string) => { if (!c) fail++; console.log(c ? '✓ ' + m : (process.env.GITHUB_ACTIONS ? '::error::' : '✗ ') + m); };
 (async () => {
   const { OsmPoints } = await import('../src/geo-osm');
@@ -62,6 +62,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms)); let fail = 0;
   await restarted.load(queryPoint.lat, queryPoint.lon);
   ok(requestsAfterRestart === 0 && restarted.nearby(queryPoint.lat, queryPoint.lon, 1200)[0]?.id === 'osm:node:1', 'OSM-Import liest gespeicherte Regionen nach Neustart vor dem Netzabruf');
   const { geoObjects } = await import('../src/geo-world');
+  const { ensureTerrain } = await import('../src/geo-terrain');
+  await ensureTerrain(queryPoint.lat, queryPoint.lon, GEO.viewM + 2500); // Gelände (Vektorkacheln); bei Netzausfall gilt Ersatzgelände
   const firstArea = geoObjects(queryPoint.lat, queryPoint.lon, GEO.viewM, 1800000000000);
   const overlap = geoObjects(queryPoint.lat + .002, queryPoint.lon, GEO.viewM, 1800000000000);
   const byId = new Map(overlap.map(o => [o.id, o]));

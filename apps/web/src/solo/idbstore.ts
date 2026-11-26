@@ -1,3 +1,4 @@
+import type { Character } from '@nam/shared';
 import { MemoryStore } from '../../../server/src/store';
 import { WriteOrder } from '../../../server/src/write-order';
 import { parseSoloBackup, serializeSoloBackup } from './backup';
@@ -48,17 +49,32 @@ export class IdbStore extends MemoryStore {
     }, 2000);
   }
 
+  private persist(data: typeof this.data) {
+    return new Promise<void>((resolve, reject) => {
+      const transaction = this.connection.transaction(STORE_NAME, 'readwrite');
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB-Transaktion abgebrochen'));
+      transaction.objectStore(STORE_NAME).put(data, DATA_KEY);
+    });
+  }
+
+  putCharacters(characters: readonly Character[]) {
+    const documents = structuredClone(characters);
+    return this.writes.run(DATA_KEY, async () => {
+      const chars = { ...this.data.chars };
+      for (const character of documents) chars[character.id] = character;
+      await this.persist({ ...this.data, chars });
+      this.data.chars ??= {};
+      for (const character of documents) this.data.chars[character.id] = character;
+    });
+  }
+
   flush() {
     return this.writes.run(DATA_KEY, async () => {
       if (!this.dirty) return;
       this.dirty = false;
       try {
-        await new Promise<void>((resolve, reject) => {
-          const transaction = this.connection.transaction(STORE_NAME, 'readwrite');
-          transaction.oncomplete = () => resolve();
-          transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB-Transaktion abgebrochen'));
-          transaction.objectStore(STORE_NAME).put(this.data, DATA_KEY);
-        });
+        await this.persist(this.data);
       } catch (error) {
         this.dirty = true;
         throw error;

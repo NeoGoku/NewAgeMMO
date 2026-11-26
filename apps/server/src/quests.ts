@@ -1,4 +1,4 @@
-import { QUESTS, ITEMS, MOBS, LOCS, NPCS, NODES, REGIONAL_QUEST_ID, type Goal, type QuestDef } from '@nam/game-data';
+import { QUESTS, ITEMS, MOBS, LOCS, NPCS, NODES, REGIONAL_QUEST_ID, type Goal, type NodeDef, type QuestDef } from '@nam/game-data';
 import { expToNext, haversine, hash32, rad, wrapLon, type GeoCoord, type QuestRegion, type Rarity } from '@nam/shared';
 import { send, sys, now, type Player } from './state';
 import { osmObjects } from './geo-osm';
@@ -6,10 +6,11 @@ import { geoObjects } from './geo-world';
 import { publishProgress } from './character-save';
 import { invAdd, invCount, invRemove, gainExp, addTrainExp, recalc } from './chars';
 const day = () => Math.floor(Date.now() / 864e5);
-type RegionalGoal = Extract<Goal['k'], 'region' | 'survey' | 'regional_hunt' | 'regional_gather'>;
+type RegionalGoal = Extract<Goal['k'], 'region' | 'survey' | 'regional_hunt' | 'regional_gather' | 'regional_event'>;
+const isRegional = (kind: unknown): kind is RegionalGoal => kind === 'region' || kind === 'survey' || kind === 'regional_hunt' || kind === 'regional_gather' || kind === 'regional_event';
 function regionalGoal(q: QuestDef): RegionalGoal | undefined {
   const kind = q.goals[0]?.k;
-  if (kind === 'region' || kind === 'survey' || kind === 'regional_hunt' || kind === 'regional_gather') return kind;
+  if (isRegional(kind)) return kind;
 }
 export function dailyReset(p: Player) { const d = day(); if (p.c.dailyReset !== d) { p.c.dailyReset = d; for (const [id, qs] of Object.entries(p.c.quests)) if (QUESTS[id]?.repeat === 'daily') delete p.c.quests[id]; p.c.questsDone = p.c.questsDone.filter(id => QUESTS[id]?.repeat !== 'daily'); } }
 export function questEvent(p: Player, kind: 'kill' | 'item' | 'craft' | 'gather' | 'visit' | 'talk' | RegionalGoal, target: string, n = 1, fam?: string) {
@@ -20,7 +21,7 @@ export function questEvent(p: Player, kind: 'kill' | 'item' | 'craft' | 'gather'
       let inc = 0;
       if (kind === 'kill') { if (g.k === 'kill' && (g.t === '*' || g.t === target)) inc = n; else if (g.k === 'boss' && g.t === target) inc = n; else if (g.k === 'dungeon' && g.t === p.loc) inc = n; }
       else if (kind === 'craft' && g.k === 'craft' && (g.t === '*' || g.t === target)) inc = n; else if (kind === 'gather' && g.k === 'gather' && (g.t === '*' || g.t === target)) inc = n;
-      else if ((kind === 'region' || kind === 'survey' || kind === 'regional_hunt' || kind === 'regional_gather') && g.k === kind && target === id) inc = 1;
+      else if (isRegional(kind) && g.k === kind && target === id) inc = 1;
       else if (kind === 'visit' && g.k === 'visit' && g.t === target) inc = 1; else if (kind === 'talk' && g.k === 'talk' && g.t === target) inc = 1;
       if (g.k === 'collect' && (kind === 'item' || kind === 'gather') ) { const c = Math.min(g.n, invCount(p.c, g.t)); if (c !== qs.prog[i]) { qs.prog[i] = c; changed = true; } }
       if (inc && qs.prog[i] < g.n) { qs.prog[i] = Math.min(g.n, qs.prog[i] + inc); changed = true; }
@@ -36,6 +37,12 @@ function publicQuestSite(origin: GeoCoord) {
     .sort((a, b) => a.distance - b.distance)[0]?.point;
 }
 
+export function mapNodeBlocked(p: Player, node: NodeDef): string | undefined {
+  if ((p.c.prof[node.prof]?.lvl ?? 1) < node.tier * 10) return `Benötigt Berufslevel ${node.tier * 10}`;
+  const tool = { mining: 'pickaxe', herbalism: 'sickle', woodcutting: 'axe' }[node.prof];
+  if (tool && !p.c.inventory.some(item => ITEMS[item.id]?.tool === tool && ITEMS[item.id].tier >= node.tier)) return 'Passendes Werkzeug fehlt';
+}
+
 function selectQuestRegion(p: Player, kind: RegionalGoal): QuestRegion | undefined {
   const geo = p.geo;
   if (!geo?.on || !geo.has) return;
@@ -46,14 +53,19 @@ function selectQuestRegion(p: Player, kind: RegionalGoal): QuestRegion | undefin
   }
   if (kind === 'regional_gather') {
     const node = geoObjects(geo.lat, geo.lon, 900).find(point => point.k === 'node' &&
-      (p.c.prof[NODES[point.def]?.prof]?.lvl ?? 1) >= (NODES[point.def]?.tier ?? Infinity) * 10);
+      NODES[point.def] && !mapNodeBlocked(p, NODES[point.def]));
     return node && { lat: node.lat, lon: node.lon, radius: 160, label: 'Regionales Sammelgebiet', virtualOnly: false };
+  }
+  if (kind === 'regional_event') {
+    const storm = geoObjects(geo.lat, geo.lon, 900).find(point => point.extra?.regionalEvent === 'aetherstorm' &&
+      (point.lvl ?? 1) <= p.c.level + 15 && (point.extra.endsAt ?? 0) - now() >= 60e3);
+    return storm && { lat: storm.lat, lon: storm.lon, radius: 120, label: 'Äthersturm', virtualOnly: false };
   }
   const publicPoint = publicQuestSite(geo);
   if (publicPoint) {
     return { lat: publicPoint.lat, lon: publicPoint.lon, radius: 90, label: publicPoint.name, virtualOnly: false };
   }
-  if (kind === 'survey' && geo.gps) return;
+  if (geo.gps) return;
   const cellLat = Math.round(geo.lat * 500) / 500;
   const cellLon = Math.round(geo.lon * 500) / 500;
   const sign = hash32(p.id + ':' + day()) % 2 === 0 ? -1 : 1;
@@ -114,12 +126,22 @@ export function recordRegionalGather(p: Player, point: GeoCoord) {
   }
 }
 
+export function recordRegionalEvent(p: Player, point: GeoCoord) {
+  if (p.c.dailyReset !== day()) return;
+  for (const [id, quest] of Object.entries(p.c.quests)) {
+    if (QUESTS[id]?.goals[0]?.k === 'regional_event' && quest.state === 'active' && quest.region && inQuestRegion(point, quest.region)) {
+      questEvent(p, 'regional_event', id);
+    }
+  }
+}
+
 export function canAccept(p: Player, q: QuestDef): string | null {
   const c = p.c; if (c.level < q.lvl) return `Benötigt Level ${q.lvl}`; if (c.quests[q.id] && c.quests[q.id].state !== 'turned') return 'Bereits angenommen'; if (c.questsDone.includes(q.id)) return 'Bereits abgeschlossen';
   if (q.prereq && !c.questsDone.includes(q.prereq)) return 'Vorquest fehlt';
   const kind = regionalGoal(q);
   if (kind && (!p.geo?.on || !p.geo.has || p.inScene || p.houseId)) return 'Kartenposition wird benötigt';
-  if (kind === 'survey' && p.geo?.gps && !publicQuestSite(p.geo)) return 'Kein öffentlicher Kartenort für diese Quest in der Nähe';
+  if ((kind === 'region' || kind === 'survey') && p.geo?.gps && !publicQuestSite(p.geo)) return 'Kein öffentlicher Kartenort für diese Quest in der Nähe';
+  if (kind === 'regional_event' && !selectQuestRegion(p, kind)) return 'Zurzeit kein erreichbarer Äthersturm in der Nähe';
   return null;
 }
 export function acceptQuest(p: Player, id: string): string | null {
@@ -128,22 +150,38 @@ export function acceptQuest(p: Player, id: string): string | null {
   const region = kind ? selectQuestRegion(p, kind) : undefined;
   if (kind && !region) return 'Kein geeignetes Ziel für diese Quest in der Nähe';
   if (q.give && invAdd(p.c, q.give.id, q.give.qty) > 0) return 'Inventar voll';
-  p.c.quests[id] = { state: 'active', prog: q.goals.map(() => 0), started: now(), ...(region && { region }) };
-  p.dirty = true; q.goals.forEach((g, i) => { if (g.k === 'collect') p.c.quests[id].prog[i] = Math.min(g.n, invCount(p.c, g.t)); });
-  questEvent(p, 'item', ''); sys(p, `Quest angenommen: ${q.name}`, 'quest'); return null;
+  const accept = () => {
+    p.c.quests[id] = { state: 'active', prog: q.goals.map(() => 0), started: now(), ...(region && { region }) };
+    p.dirty = true;
+    q.goals.forEach((g, i) => { if (g.k === 'collect') p.c.quests[id].prog[i] = Math.min(g.n, invCount(p.c, g.t)); });
+    questEvent(p, 'item', '');
+    sys(p, `Quest angenommen: ${q.name}`, 'quest');
+    send(p, { t: 'quests', q: p.c.quests, done: p.c.questsDone });
+  };
+  if (region) publishProgress(p, accept);
+  else accept();
+  return null;
 }
 export function turnIn(p: Player, id: string, choice?: string): string | null {
+  dailyReset(p);
   const q = QUESTS[id]; const qs = p.c.quests[id]; if (!q || !qs) return 'Quest nicht aktiv'; if (qs.state !== 'done') return 'Noch nicht abgeschlossen';
   if (q.choice && !q.choice.options.some(o => o.id === choice)) return 'Bitte eine Entscheidung treffen';
-  for (const g of q.goals) if (g.k === 'collect') { if (!invRemove(p.c, g.t, g.n)) return 'Gegenstände fehlen'; }
-  if (q.give) invRemove(p.c, q.give.id, q.give.qty);
+  const required = new Map<string, number>();
+  for (const g of q.goals) if (g.k === 'collect') required.set(g.t, (required.get(g.t) ?? 0) + g.n);
+  if ([...required].some(([item, quantity]) => invCount(p.c, item) < quantity)) return 'Gegenstände fehlen';
   const lv = p.c.level; const r = q.reward; const exp = q.scale ? Math.floor(expToNext(lv) * .12) : r.exp || 0; const gold = q.scale ? lv * 40 : r.gold || 0;
-  for (const it of r.items || []) { const left = invAdd(p.c, it.id, it.qty, (it.rar || 0) as Rarity); if (left) p.c.mail.push({ id: 'ml' + now(), from: 'Quest', subject: q.name, gold: 0, items: [{ uid: 'q' + now() + it.id, id: it.id, rar: (it.rar || 0) as Rarity, qty: left }], t: now() }); }
-  p.c.gold += gold; gainExp(p, exp); if (r.train) addTrainExp(p, r.train); if (r.stat) p.c.statPoints += r.stat;
-  const rep = { ...(r.rep || {}) }; if (q.choice && choice) { const o = q.choice.options.find(x => x.id === choice)!; for (const k in o.rep) rep[k] = (rep[k] || 0) + o.rep[k]; p.c.choices[q.id] = choice; }
-  for (const k in rep) p.c.rep[k] = (p.c.rep[k] || 0) + rep[k];
-  qs.state = 'turned'; delete p.c.quests[id]; p.c.questsDone.push(id); recalc(p); p.dirty = true; sys(p, `Quest abgegeben: ${q.name} (+${exp} EXP, +${gold} Gold)`, 'quest');
-  send(p, { t: 'quests', q: p.c.quests, done: p.c.questsDone }); return null;
+  publishProgress(p, () => {
+    for (const [item, quantity] of required) invRemove(p.c, item, quantity);
+    if (q.give) invRemove(p.c, q.give.id, q.give.qty);
+    for (const it of r.items || []) { const left = invAdd(p.c, it.id, it.qty, (it.rar || 0) as Rarity); if (left) p.c.mail.push({ id: 'ml' + now(), from: 'Quest', subject: q.name, gold: 0, items: [{ uid: 'q' + now() + it.id, id: it.id, rar: (it.rar || 0) as Rarity, qty: left }], t: now() }); }
+    p.c.gold += gold; gainExp(p, exp); if (r.train) addTrainExp(p, r.train); if (r.stat) p.c.statPoints += r.stat;
+    const rep = { ...(r.rep || {}) }; if (q.choice && choice) { const o = q.choice.options.find(x => x.id === choice)!; for (const k in o.rep) rep[k] = (rep[k] || 0) + o.rep[k]; p.c.choices[q.id] = choice; }
+    for (const k in rep) p.c.rep[k] = (p.c.rep[k] || 0) + rep[k];
+    qs.state = 'turned'; delete p.c.quests[id]; p.c.questsDone.push(id); recalc(p);
+    sys(p, `Quest abgegeben: ${q.name} (+${exp} EXP, +${gold} Gold)`, 'quest');
+    send(p, { t: 'quests', q: p.c.quests, done: p.c.questsDone });
+  });
+  return null;
 }
 export function autoStartHidden(p: Player, loc: string) { for (const q of Object.values(QUESTS)) if (q.autoStart === loc && !p.c.quests[q.id] && !p.c.questsDone.includes(q.id) && p.c.level >= q.lvl) acceptQuest(p, q.id); }
 export function availableAt(p: Player, npc: string) { dailyReset(p); return Object.values(QUESTS).filter(q => q.giver === npc && !canAccept(p, q)).map(q => q.id); }

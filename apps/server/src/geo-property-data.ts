@@ -1,7 +1,7 @@
 import { BAL, GEO, PROPERTY_SOURCE, PROPERTY_REGION, PROPERTY_BOUNDS, VIRTUAL_PLOT, R_EARTH, haversine, rad, supportedPropertyBuilding, validPropertyFootprint, type GeoPropertyBuilding } from '@nam/shared';
 
 export const PROPERTY_CATALOG_MAX_BYTES = 4 * 1024 * 1024;
-const MAX_FEATURES = 1500;
+const MAX_FEATURES = 1800;
 const MAX_NEARBY = 32;
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

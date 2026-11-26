@@ -1,6 +1,8 @@
 # Development Queue
 
 ## Veröffentlichung und nächste Integrationen
+- [implementiert] World Expansion: gemeinsame Immobilienfilter für Liste und Karte, geografische Vermietung mit dauerhaftem Vertrag, virtuelle Baugrundstücke im Braunschweig-Offline-Katalog und regionale Kampfbegegnungen.
+- [teilweise] Mobiler Karten- und Update-Smoke-Test. Geräteabnahme in iOS Safari, WhatsApp und auf Android steht aus. Sachsen und das Lizenzprodukt ALKIS-WFS bleiben offene Datenquellen.
 - [implementiert] WASD und Touch-Joystick für den virtuellen Modus, dichter verteilte Standardgegner, kompakte Kartensteuerung mit GPS-Schalter und Sentinel-2 mit Straßenkarten-Ersatz.
 - [lokal geprüft] P0: Kampfbelohnung, Levelaufstieg, Logout und Reconnect mit JSON und PostgreSQL 16 + PostGIS. Browser-Solo: Service Worker und IndexedDB-Reconnect in Chromium.
 - [erledigt] PR #1 ist in `main` gemergt. GitHub Pages ist eingerichtet.

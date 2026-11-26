@@ -1,6 +1,12 @@
 # Implementierungsstatus (ehrlich, Stand Alpha 0.1)
 
 
+## World Expansion
+- Braunschweig umfasst 1.617 nach OSM-ID eindeutige Katalogobjekte. Vier davon sind virtuelle Grundstücke auf kartierten Entwicklungsflächen. Nordstadt und Bebelhof ergänzen die vier vorhandenen Referenzgebiete. Kauf, Innenraum und Ausbau nutzen Spielwährung. [Datenlauf](https://github.com/NeoGoku/NewAgeMMO/actions/runs/45770005899)
+- Immobilienfilter werden für Karte, Cluster und die Marktansicht gemeinsam verwendet. Bestehende Eigentumsdatensätze behalten ihre IDs. Abgelaufene Mietverträge mit Möbeln oder Lagerinhalt bleiben zur Räumung zugänglich.
+- Der Zoom-Knopf zentriert auf der Spielfigur und stellt mindestens Gameplay-Zoom 17,5 wieder her. Geländeabrufe priorisieren die Nähe zur Figur und verwenden maximal sechs parallele Anfragen. NRW und Sachsen-Anhalt ergänzen die hochauflösende Luftbildabdeckung.
+- Der Aktualisierungsdienst vergleicht Manifest und Einstiegseite auf dieselbe Build-ID. Installiert wird nach dem Wechsel zur Charakterauswahl oder zum Titelbildschirm und nach Abschluss der Solo-Speicherung.
+
 ## Smartphone-Integration
 
 - GPS verwendet bestätigte Gerätekoordinaten. Ohne GPS-Fix werden keine Berliner Spielobjekte angezeigt. Regionale Zellen erzeugen auch fern der gesetzten Spielorte NPCs, Ressourcen, Monster und Elitegegner.

@@ -1,0 +1,7 @@
+# Übergabe: World Expansion
+
+- PR #3 setzt auf Claudes Gelände-, Spawn-, Luftbild- und Gebietskartenarbeit auf. Der Solo-Katalog enthält 1.617 OSM-Objekte einschließlich vier virtueller Grundstücke. Nordstadt und Bebelhof wurden ergänzt.
+- Die Immobilienfilter werden von Karte, Clustern und Markt gemeinsam verwendet. Geografische Vermietung verwendet serverseitige Angebote, verlängerbare Verträge und getrennte Mieträume. Goldabbuchung und Vermieterpost werden in einem atomaren Speicherschritt geschrieben. Beim Vertragsende müssen Mieträume leer und verlassen sein.
+- Gebietsquests, Ätherstürme und Weltbossbegegnungen verwenden Kartenposition und serverseitige Teilnahme. Belohnungen werden dauerhaft verbucht. Bestehende Gruppeninstanzen verwenden den jeweiligen Eingang. Vorläufige prozedurale Inhalte halten den Solo-Modus ohne Geländedaten spielbar und weichen bei bekannten Geodaten den Geländeregeln.
+- Die mobile Bedienung berücksichtigt kurze Viewports und Safe Areas. Die Zentrierung hebt starkes Herauszoomen auf den Gameplay-Zoom an. Update-Installation wartet auf sichere Ansicht, gespeicherten Solo-Stand und übereinstimmende Build-ID von HTML und Manifest.
+- NRW und Sachsen-Anhalt wurden mit realem WMS-PNG und den Origins für Pages und Android geprüft. Sachsen bleibt wegen nicht verwendbarer GetCapabilities offen. Amtliche ALKIS-Flurstücke warten auf die produktspezifische Lizenzprüfung des WFS. Android-Signierung, Geräteabnahme und weiterer Ausbau der Gildenkämpfe bleiben offen. Öffentliches Multiplayer- und Valhalla-Hosting sind zurückgestellt.

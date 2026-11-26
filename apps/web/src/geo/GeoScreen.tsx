@@ -11,12 +11,15 @@ import { Joystick } from './Joystick';
 import { applyMapPreferences, dopCovers, mapPreferences, mapStyle, saveMapPreferences, type MapKind, type MapTheme } from './map-style';
 import { distanceLabel, pinLabels, questPins, type QuestPinRole } from './quest-map';
 import { clusterMarkers, drawMarkerIcon, MARKER_CATEGORIES, markerCategories, PROPERTY_MARKER_STATUSES, propertyMarkerStatus, propertyMarkerType, type MarkerCategory } from './map-markers';
+import { matchesProperty } from './property-filter';
+import { PropertyFilterFields } from '../ui/PropertyFilterFields';
 import { geoBus } from './bus';
 import { net } from '../net';
 import { toast } from '../store';
 import { audio } from '../audio';
 
 const KEY = 'nam.geo.consent';
+const GAMEPLAY_ZOOM = 17.5;
 type Consent = 'gps' | 'virtual';
 type Mode = 'gps' | 'virtual';
 interface Me { lat: number; lon: number; mode?: string; regionLabel?: string; speed?: number; etaSeconds?: number; dest?: { lat: number; lon: number } | null; flags?: string[]; travel?: GeoTravelView | null; travelModes?: GeoTravelMode[] }
@@ -80,11 +83,12 @@ const CSS = `
 .geo .marker-legend-head,.geo .marker-list-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .geo .marker-legend-head button,.geo .marker-list-head button{min-width:34px;min-height:34px;padding:0}
 .geo .marker-legend ul{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:4px 8px}
-.geo .marker-legend label{display:flex;align-items:center;gap:6px;min-height:34px;cursor:pointer}
+.geo .marker-legend > ul label,.geo .marker-legend .zone-toggle{display:flex;align-items:center;gap:6px;min-height:34px;cursor:pointer}
 .geo .marker-legend svg{flex:none}
 .geo .marker-legend input{margin:0;accent-color:#5ef2ff}
 .geo .marker-legend-actions{display:flex;gap:6px;flex-wrap:wrap}
 .geo .marker-legend-actions button{min-height:34px}
+.geo .property-filter-actions button{min-height:34px}
 .geo .property-legend{display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid #395365}
 .geo .property-legend span{display:flex;gap:4px;align-items:center;font-size:11px}
 .geo .property-legend b{border:1px solid currentColor;border-radius:4px;min-width:14px;text-align:center}
@@ -115,14 +119,23 @@ const CSS = `
 .geo .quest-pin.giver{border-color:#ffda65;color:#ffda65}
 .geo .quest-pin.objective{border-color:#80f6b2;color:#80f6b2}
 .geo .quest-pin.turnin{border-color:#d7a6ff;color:#d7a6ff}
-.geo .pop{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 150px + var(--sab));z-index:12;background:#04101cf2;border:1px solid #1ee8ff88;border-radius:14px;padding:12px 14px;width:min(320px,92vw);box-shadow:0 10px 40px #000a,0 0 24px #1ee8ff33}
+.geo .pop{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--navh) + 150px + var(--sab));z-index:12;background:#04101cf2;border:1px solid #1ee8ff88;border-radius:14px;padding:12px 14px;width:min(320px,calc(100% - 22px - var(--sal) - var(--sar)));max-height:calc(100% - 228px - var(--sat) - var(--sab));overflow:auto;overscroll-behavior:contain;box-shadow:0 10px 40px #000a,0 0 24px #1ee8ff33}
 .geo .pop h3{margin:0 0 2px;font-size:16px;color:#eaffff}
 .geo .pop .dim{color:#7fa3b8;font-size:12px}
-.geo .pop .row{display:flex;gap:8px;margin-top:10px}
+.geo .pop .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .geo .pop .row button{flex:1}
-.geo .portal-destinations{display:grid;gap:6px;margin-top:8px;max-height:28vh;overflow:auto}
+.geo .portal-destinations{display:grid;gap:6px;margin-top:8px;max-height:28vh;max-height:28dvh;overflow:auto}
+@media(max-height:500px){
+  .geo .side{top:calc(48px + var(--sat))}
+  .geo .pop{bottom:calc(var(--navh) + 12px + var(--sab));max-height:calc(100% - var(--navh) - 100px - var(--sat) - var(--sab));width:min(320px,calc(100% - 100px - var(--sal) - var(--sar)))}
+  .geo .quest-track{bottom:calc(var(--navh) + 8px + var(--sab));max-height:35%;overflow:auto}
+  .geo button.geo-stick{width:66px;height:66px}
+}
 `
 
+interface GeoZone { id: string; tier: number; lvl: [number, number]; name: string; label: string; bounds: [number, number, number, number] }
+const TIER_COLORS = ['#58d68d', '#5dade2', '#f4d03f', '#eb984e', '#e74c3c', '#bb8fce'];
+const zoneFeature = (z: GeoZone) => ({ type: 'Feature' as const, properties: { c: TIER_COLORS[z.tier - 1], t: `${z.name}\nLv ${z.lvl[0]}–${z.lvl[1]}` }, geometry: { type: 'Polygon' as const, coordinates: [[[z.bounds[0], z.bounds[1]], [z.bounds[2], z.bounds[1]], [z.bounds[2], z.bounds[3]], [z.bounds[0], z.bounds[3]], [z.bounds[0], z.bounds[1]]]] } });
 export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; controlsBlocked?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -154,7 +167,10 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const routePin = useRef<maplibregl.Marker | null>(null);
   const [mapSettings, setMapSettings] = useState(false);
   const [markerLegend, setMarkerLegend] = useState(false);
+  const [zones, setZones] = useState<GeoZone[]>([]);
+  const [showZones, setShowZones] = useState(() => { try { return localStorage.getItem('nam.map.zones') === '1'; } catch { return false; } });
   const [markerFilters, setMarkerFilters] = useState<ReadonlySet<MarkerCategory>>(() => new Set(markerCategoryKeys));
+  const propertyFilters = useS(s => s.propertyFilters);
   const [clusterSelection, setClusterSelection] = useState<MarkerTarget[]>([]);
   blockedRef.current ||= mapSettings || markerLegend;
   const [mapError, setMapError] = useState('');
@@ -188,7 +204,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const onMode = () => { choose(modeRef.current === 'gps' ? 'virtual' : 'gps'); };
     const onStop = () => { net.send('geoStop', {}); targetRef.current = null; setWalking(false); redraw.current(); };
     const onWipe = () => { void wipe(); };
-    const onRecenter = () => { const p = myPos(); if (p && mapRef.current) { followRef.current = true; setFollow(true); mapRef.current.easeTo({ center: [p.lon, p.lat], zoom: mapRef.current.getZoom() }); } };
+    const onRecenter = () => { const p = myPos(); if (p && mapRef.current) { followRef.current = true; setFollow(true); const z = mapRef.current.getZoom(); mapRef.current.easeTo({ center: [p.lon, p.lat], zoom: Math.max(z, GAMEPLAY_ZOOM), duration: 650, easing: t => 1 - Math.pow(1 - t, 3) }); } };
     const onWalk = (e: Event) => { const d = (e as CustomEvent).detail; if (d) walkTo(d.lat, d.lon, d.name, d.address); };
     const onQuest = (e: Event) => {
       const detail = (e as CustomEvent).detail as { id: string; role: QuestPinRole; navigate: boolean };
@@ -206,6 +222,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
 
   // Karte
   useEffect(() => {
+    maplibregl.setMaxParallelImageRequests(8);
     const map = new maplibregl.Map({
       container: box.current!, center: [0, 18], zoom: 2, maxZoom: 19, maxPitch: 65,
       bearing: preferencesRef.current.bearing, pitch: preferencesRef.current.pitch, attributionControl: { compact: true },
@@ -215,7 +232,11 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     const bounds = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => map.resize());
     bounds?.observe(box.current!);
     map.on('load', () => {
-      for (const id of ['cities', 'territories', 'ranges', 'line', 'quest-area', 'quest-route']) map.addSource(id, { type: 'geojson', data: fc([]) });
+      for (const id of ['zones', 'cities', 'territories', 'ranges', 'line', 'quest-area', 'quest-route']) map.addSource(id, { type: 'geojson', data: fc([]) });
+      // Gebietsstufen (optional): unterhalb aller Spiel-Layer
+      map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none' }, paint: { 'fill-color': ['get', 'c'], 'fill-opacity': 0.12 } });
+      map.addLayer({ id: 'zones-line', type: 'line', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none' }, paint: { 'line-color': ['get', 'c'], 'line-width': 1.5, 'line-opacity': 0.8, 'line-dasharray': [3, 2] } });
+      map.addLayer({ id: 'zones-label', type: 'symbol', source: 'zones', layout: { visibility: showZonesRef.current ? 'visible' : 'none', 'text-field': ['get', 't'], 'text-font': ['Noto Sans Bold'], 'text-size': 11, 'text-allow-overlap': false }, paint: { 'text-color': ['get', 'c'], 'text-halo-color': '#0b0f1e', 'text-halo-width': 1.4 } });
       map.addLayer({ id: 'cities-fill', type: 'fill', source: 'cities', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.08 } });
       map.addLayer({ id: 'cities-line', type: 'line', source: 'cities', paint: { 'line-color': '#22d3ee', 'line-width': 2, 'line-dasharray': [3, 2] } });
       map.addLayer({ id: 'territories-fill', type: 'fill', source: 'territories', paint: { 'fill-color': '#d197ff', 'fill-opacity': 0.14 } });
@@ -231,13 +252,13 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       redraw.current();
     });
     map.on('error', event => {
-      if ('sourceId' in event && (event.sourceId === 'satellite' || event.sourceId === 'satellite-dop')) {
+      if ('sourceId' in event && (event.sourceId === 'satellite' || String(event.sourceId).startsWith('satellite-dop'))) {
         setMapError('Luftbilddetails teilweise nicht verfügbar.');
       } else if (preferencesRef.current.kind !== 'satellite') {
         setMapError('Kartendaten teilweise nicht verfügbar.');
       }
     });
-    map.on('sourcedata', event => { if (event.isSourceLoaded && ['osm', 'satellite', 'satellite-dop', 'openmap'].includes(event.sourceId ?? '')) setMapError(''); });
+    map.on('sourcedata', event => { if (event.isSourceLoaded && (['osm', 'satellite', 'openmap'].includes(event.sourceId ?? '') || String(event.sourceId).startsWith('satellite-dop'))) setMapError(''); });
     map.on('moveend', () => {
       redrawMarkers.current();
       // Satellit ohne zulässige Detailquelle: Hinweis statt stillschweigend unscharfer Bilder
@@ -271,6 +292,15 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const showZonesRef = useRef(showZones);
+  showZonesRef.current = showZones;
+  useEffect(() => {
+    try { localStorage.setItem('nam.map.zones', showZones ? '1' : '0'); } catch { /* ohne Speicher */ }
+    const map = mapRef.current;
+    if (!map?.getLayer('zones-fill')) return;
+    for (const id of ['zones-fill', 'zones-line', 'zones-label']) map.setLayoutProperty(id, 'visibility', showZones ? 'visible' : 'none');
+    (map.getSource('zones') as maplibregl.GeoJSONSource | undefined)?.setData(fc(showZones ? zones.map(zoneFeature) : []));
+  }, [showZones, zones]);
   useEffect(() => {
     saveMapPreferences({ ...preferences, follow });
   }, [preferences, follow]);
@@ -345,16 +375,23 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     setClusterSelection([]);
   }
 
+  function activeMarkerCategory(object: GeoObj, distance?: number) {
+    const category = markerCategories(object).find(value => markerFilters.has(value));
+    if (category === 'property' && !matchesProperty(object, propertyFilters, distance)) return undefined;
+    return category;
+  }
+
   redrawMarkers.current = () => {
     const map = mapRef.current;
     if (!map) return;
     const me = myPos();
     const points: MarkerTarget[] = [];
     for (const object of objsRef.current) {
-      const category = markerCategories(object).find(value => markerFilters.has(value));
+      const distance = me ? haversine(me.lat, me.lon, object.lat, object.lon) : undefined;
+      const category = activeMarkerCategory(object, distance);
       if (!category) continue;
       const radius = category === 'boss' ? 29 : category === 'elite' ? 24 : category === 'mob' ? 19 : category === 'city' ? 17 : 15;
-      const near = !!me && haversine(me.lat, me.lon, object.lat, object.lon) <= GEO.interactM + (object.r || 0);
+      const near = distance !== undefined && distance <= GEO.interactM + (object.r || 0);
       points.push({ object, category, radius, near, id: object.id, lat: object.lat, lon: object.lon });
     }
     if (markerFilters.has('player')) {
@@ -412,7 +449,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       const title = category === 'property' ? propertyMarkerType(building).label : object?.name ?? first.player?.name ?? '';
       const level = object?.lvl ?? first.player?.lvl;
       const mob = object?.k === 'mob' ? MOBS[object.def] : undefined;
-      const status = category === 'property' ? propertyMarkerStatus(object?.extra?.marketStatus) : undefined;
+      const status = category === 'property' ? propertyMarkerStatus(object?.extra?.marketStatus, object?.extra?.rentGold) : undefined;
       const sig = `${title}|${level}|${near}|${category}|${mob?.art}|${status?.label}`;
       if (rec.sig === sig) continue;
       rec.sig = sig;
@@ -564,6 +601,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         centered.current = false;
       } else if (me && typeof me.lat === 'number') meRef.current = me;
       objsRef.current = (m.objs as GeoObj[]) || [];
+      if (Array.isArray(m.zones)) setZones(previous => JSON.stringify(previous.map(z => z.id)) === JSON.stringify((m.zones as GeoZone[]).map(z => z.id)) ? previous : m.zones as GeoZone[]);
       playersRef.current = (m.players as GeoPlayer[]) || [];
       targetRef.current = me?.dest ?? null;
       if (me?.travel !== undefined) setTravel(me.travel);
@@ -610,7 +648,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
     return () => { active = false; navigator.geolocation.clearWatch(watch); };
   }, [mode, conn, gpsRetry]);
 
-  useEffect(() => { redraw.current(); }, [follow, mode, questTrack, questStates, markerFilters, pins.map(p => p.lat + ':' + p.lon).join('|')]);
+  useEffect(() => { redraw.current(); }, [follow, mode, questTrack, questStates, markerFilters, propertyFilters, pins.map(p => p.lat + ':' + p.lon).join('|')]);
 
   useEffect(() => { redraw.current(); }, [routeTarget, previewLine, activeLine]);
   function choose(c: Mode) {
@@ -658,18 +696,30 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
   const zoom = (d: number) => mapRef.current?.zoomTo(mapRef.current.getZoom() + d, { duration: 250 });
 
   const me = myPos();
-  const o = sel ? objsRef.current.find(x => x.id === sel && markerCategories(x).some(category => markerFilters.has(category))) : undefined;
+  const distanceFromMe = (target: { lat: number; lon: number }) => me ? haversine(me.lat, me.lon, target.lat, target.lon) : undefined;
+  const o = sel ? objsRef.current.find(x => x.id === sel && activeMarkerCategory(x, distanceFromMe(x))) : undefined;
   const p = selPlayer && markerFilters.has('player') ? playersRef.current.find(player => player.id === selPlayer) : undefined;
+  const clusterResults = clusterSelection.flatMap((target): MarkerTarget[] => {
+    if (target.object) {
+      const object = objsRef.current.find(object => object.id === target.object?.id);
+      const category = object && activeMarkerCategory(object, distanceFromMe(object));
+      return object && category ? [{ ...target, object, category, lat: object.lat, lon: object.lon }] : [];
+    }
+    const player = markerFilters.has('player') && playersRef.current.find(player => player.id === target.player?.id);
+    return player ? [{ ...target, player, lat: player.lat, lon: player.lon }] : [];
+  });
   const dist = o && me ? haversine(me.lat, me.lon, o.lat, o.lon) : null;
   const playerDist = p && me ? haversine(me.lat, me.lon, p.lat, p.lon) : null;
   const inRange = !!o && dist !== null && dist <= GEO.interactM + (o.r || 0);
+  const hereAt = meRef.current;
+  const zoneHere = hereAt ? zones.find(z => hereAt.lon >= z.bounds[0] && hereAt.lon <= z.bounds[2] && hereAt.lat >= z.bounds[1] && hereAt.lat <= z.bounds[3]) : undefined;
   const rejected = info.flags.some(f => f === 'speed' || f === 'teleport');
   const questDistance = questTarget && me ? haversine(me.lat, me.lon, questTarget.lat, questTarget.lon) : null;
   const portal = o && destinations?.portal === o.id ? destinations : null;
   const property = o?.k === 'house' && o.def === 'property';
   const territory = o?.k === 'territory';
   const party = useS(s => s.party);
-  const propertyStatus = property ? propertyMarkerStatus(o.extra?.marketStatus) : undefined;
+  const propertyStatus = property ? propertyMarkerStatus(o.extra?.marketStatus, o.extra?.rentGold) : undefined;
   const propertyType = property ? propertyMarkerType(o.extra?.building).label : undefined;
 
   return (
@@ -681,8 +731,9 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           <div>{mode === 'gps' ? 'GPS' : 'Virtuell'} · {(info.speed * 3.6).toFixed(0)} km/h{walking ? ' · ' + (eta > 60 ? Math.ceil(eta / 60) + ' Min.' : eta + ' Sek.') : ''}</div>
           {rejected && <div className="bad">⚠ Bewegung abgelehnt ({info.flags.join(', ')})</div>}
           {gpsErr && <div className="bad">{gpsErr}</div>}
+          {zoneHere && <div style={{ color: TIER_COLORS[zoneHere.tier - 1] }}>{zoneHere.name} · empfohlen Lv {zoneHere.lvl[0]}–{zoneHere.lvl[1]}{zoneHere.label ? ` · ${zoneHere.label}` : ''}</div>}
           {mapError && <div>{mapError}</div>}
-          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen) – Straßenkarte als Ersatz.</div>}
+          {imageryNote && <div>Keine hochauflösenden Luftbilder in diesem Gebiet (Abdeckung: Niedersachsen, Thüringen, Hessen, Rheinland-Pfalz, Schleswig-Holstein, Mecklenburg-Vorpommern) – Straßenkarte als Ersatz.</div>}
           {!info.hasMe && <div>Warte auf Position…</div>}
         </div>
 
@@ -702,14 +753,19 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         <button onClick={() => zoom(1)} aria-label="Hineinzoomen">＋</button>
         <button onClick={() => zoom(-1)} aria-label="Herauszoomen">−</button>
         <button onClick={() => mapRef.current?.easeTo({ bearing: 0 })} aria-label="Nach Norden ausrichten" style={{ transform: `rotate(${-bearing}deg)` }}>N</button>
-        <button className={follow ? 'on' : ''} onClick={() => { const p = myPos(); setFollow(f => !f); if (p && !follow) mapRef.current?.easeTo({ center: [p.lon, p.lat] }); }} aria-label="Figur folgen" aria-pressed={follow}>◎</button>
+        <button className={follow ? 'on' : ''} onClick={() => geoBus.dispatchEvent(new Event('recenter'))} aria-label="Zur Figur zentrieren">◎</button>
       </div>
       {markerLegend && <section id="marker-legend" className="marker-legend" aria-labelledby="marker-legend-title">
         <div className="marker-legend-head"><h3 id="marker-legend-title">Kartenfilter und Legende</h3><button type="button" onClick={() => setMarkerLegend(false)} aria-label="Kartenfilter schließen">×</button></div>
+        <label className="zone-toggle"><input type="checkbox" checked={showZones} onChange={e => setShowZones(e.target.checked)} /> Gebietsgrenzen und empfohlene Stufen</label>
         <div className="marker-legend-actions">
           <button type="button" onClick={() => { setMarkerFilters(new Set(markerCategoryKeys)); setClusterSelection([]); }}>Alle anzeigen</button>
           <button type="button" onClick={() => { setMarkerFilters(new Set()); setClusterSelection([]); }}>Alle ausblenden</button>
         </div>
+        {markerFilters.has('property') && <PropertyFilterFields compact onOpenMarket={() => {
+          setMarkerLegend(false);
+          set({ panel: 'geoProperty', selected: null, navPanel: 'more', dialog: null });
+        }} />}
         <ul>{markerCategoryKeys.map(category => {
           const { color, icon, label } = MARKER_CATEGORIES[category];
           return <li key={category}><label>
@@ -718,8 +774,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
             {label}
           </label></li>;
         })}</ul>
-        {markerFilters.has('property') && <div className="property-legend" aria-label="Immobilienstatus">{(['sale', 'own', 'rent', 'owned'] as const).map(key => {
-          const { color, label, symbol } = PROPERTY_MARKER_STATUSES[key];
+        {markerFilters.has('property') && <div className="property-legend" aria-label="Immobilienstatus">{Object.entries(PROPERTY_MARKER_STATUSES).map(([key, { color, label, symbol }]) => {
           return <span key={key}><b style={{ color }} aria-hidden="true">{symbol}</b>{label}</span>;
         })}</div>}
       </section>}
@@ -743,7 +798,7 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
       {!hidden && !controlsBlocked && !mapSettings && mode === 'virtual' && !routeTarget && travel && !pickTarget &&
         <TravelStatus travel={travel} onReroute={() => setPickTarget(true)} />}
       {pickTarget && !routeTarget && <div className="route-panel row"><span className="grow">Neues Ziel auf der Karte antippen</span><button type="button" onClick={() => setPickTarget(false)}>Zurück</button></div>}
-      {trackedQuest && !o && !p && !clusterSelection.length && !routeTarget && !travel && <section className="quest-track" aria-label="Quest auf der Karte">
+      {trackedQuest && !o && !p && !clusterResults.length && !routeTarget && !travel && <section className="quest-track" aria-label="Quest auf der Karte">
         <div className="row"><b className="grow">{trackedQuest.name}</b><button aria-label="Questmarkierungen schließen" onClick={() => setQuestTrack(null)}>×</button></div>
         {questTarget && <div>{pinLabels[questTarget.role]} · {questTarget.name}{questDistance !== null && ' · ' + distanceLabel(questDistance)}</div>}
         {questStates?.[trackedQuest.id] && <div>{trackedQuest.goals.map((goal, i) => <span key={i}>{i > 0 && ' · '}{questProgress[i] ?? 0}/{goal.n}{goal.label ? ' ' + goal.label : ''}</span>)}</div>}
@@ -756,13 +811,13 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
         {questTarget?.virtualOnly && mode === 'gps' ? <div>Dieses Ziel ist im virtuellen Modus erreichbar.</div> : questTrack?.navigate && mode === 'gps' && <div>Die Linie zeigt die Richtung zum Ziel.</div>}
         <div className="row">{pins.map(pin => <button key={pin.key} onClick={() => focusQuestPin(pin.role, false)}>{pinLabels[pin.role]}</button>)}</div>
       </section>}
-      {clusterSelection.length > 0 && <section className="pop marker-list" aria-labelledby="marker-cluster-title">
+      {!markerLegend && clusterResults.length > 0 && <section className="pop marker-list" aria-labelledby="marker-cluster-title">
         <div className="marker-list-head"><h3 id="marker-cluster-title">Kartenobjekte</h3><button type="button" aria-label="Kartenobjekte schließen" onClick={() => setClusterSelection([])}>×</button></div>
-        <ul>{clusterSelection.map(target => <li key={target.id}><button type="button" onClick={() => selectMarker(target)}>
+        <ul>{clusterResults.map(target => <li key={target.id}><button type="button" onClick={() => selectMarker(target)}>
           {target.category === 'property' ? propertyMarkerType(target.object?.extra?.building).label : target.object?.name ?? target.player?.name} · {me ? distanceLabel(haversine(me.lat, me.lon, target.lat, target.lon)) : MARKER_CATEGORIES[target.category].label}
         </button></li>)}</ul>
       </section>}
-      {p && <section className="pop" aria-label="Spieler auf der Karte">
+      {!markerLegend && p && <section className="pop" aria-label="Spieler auf der Karte">
         <h3>{p.name} · Lv {p.lvl}</h3>
         <div className="dim">Ungefähre Position{playerDist !== null && ` · ca. ${distanceLabel(playerDist)} entfernt`}</div>
         <div className="row">
@@ -770,9 +825,10 @@ export function GeoScreen({ hidden, controlsBlocked }: { hidden?: boolean; contr
           <button onClick={() => setSelPlayer(null)}>Schließen</button>
         </div>
       </section>}
-      {o && (
+      {!markerLegend && o && (
         <div className="pop">
           <h3>{propertyType ?? o.name}{o.lvl ? ` · Lv ${o.lvl}` : ''}</h3>
+          {typeof o.extra?.endsAt === 'number' && <p className="dim">Event endet um {new Date(o.extra.endsAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</p>}
           <div className="dim">{markerCategories(o).map(category => MARKER_CATEGORIES[category].label).join(' · ')}{o.fam ? ` · ${o.fam}` : ''}{propertyStatus && ` · ${propertyStatus.label}`}</div>
           {territory && <div>{o.extra?.ownerName ? `Kontrolle: ${o.extra.ownerTag ? `[${o.extra.ownerTag}] ` : ''}${o.extra.ownerName}` : 'Unbesetzt'}</div>}
           {dist !== null && <div style={{ marginTop: 6, color: inRange ? '#8affb0' : '#ffd27a' }}>{distanceLabel(dist)} entfernt{inRange && ' · In Reichweite'}</div>}

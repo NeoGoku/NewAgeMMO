@@ -41,11 +41,35 @@ const vector = {
   url: 'https://tiles.openfreemap.org/planet',
   attribution: '<a href="https://openfreemap.org/">OpenFreeMap</a> <a href="https://www.openmaptiles.org/">© OpenMapTiles</a> · ' + osmAttribution
 };
-/** Amtliche Orthofotos Niedersachsen (LGLN DOP20, 20 cm Bodenauflösung, CC BY 4.0). WMS in EPSG:3857, CORS offen, nur innerhalb der Abdeckung abgefragt. */
-export const DOP_BOUNDS: [number, number, number, number] = [6.505772, 51.153098, 11.754046, 54.148101];
-export const dopCovers = (lon: number, lat: number) => lon >= DOP_BOUNDS[0] && lon <= DOP_BOUNDS[2] && lat >= DOP_BOUNDS[1] && lat <= DOP_BOUNDS[3];
-const dopTile = 'https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=ni_dop20&STYLES=&FORMAT=image/jpeg&SRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}';
-const dopAttribution = '<a href="https://www.lgln.niedersachsen.de/startseite/geodaten_karten/digitale_orthophotos">Luftbilder © LGLN (DOP20)</a>, <a href="https://creativecommons.org/licenses/by/4.0/deed.de">CC BY 4.0</a>';
+/**
+ * Amtliche Orthofotos (WMS, EPSG:3857, CORS und Lizenz im Dienst geprüft). Quellen sind auf ihre Abdeckung begrenzt (`bounds`) und liefern
+ * außerhalb ihres Landes transparente Pixel, sodass sich überlappende Rechtecke nicht überdecken.
+ */
+export interface AerialSource { id: string; name: string; url: string; layer: string; format: string; bounds: [number, number, number, number]; attribution: string }
+const wms = (url: string, layer: string, format: string) =>
+  `${url}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=${layer}&STYLES=&FORMAT=${format}&TRANSPARENT=TRUE&SRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX={bbox-epsg-3857}`;
+const credit = (href: string, text: string, license: string, licenseHref: string) => `<a href="${href}">${text}</a>, <a href="${licenseHref}">${license}</a>`;
+export const AERIAL_SOURCES: AerialSource[] = [
+  { id: 'ni', name: 'Niedersachsen (LGLN DOP20, 20 cm)', layer: 'ni_dop20', format: 'image/vnd.jpeg-png', url: 'https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms', bounds: [6.505772, 51.153098, 11.754046, 54.148101],
+    attribution: credit('https://www.lgln.niedersachsen.de/startseite/geodaten_karten/digitale_orthophotos', 'Luftbilder © LGLN (DOP20)', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/deed.de') },
+  { id: 'nrw', name: 'Nordrhein-Westfalen (DOP)', layer: 'nw_dop_rgb', format: 'image/png', url: 'https://www.wms.nrw.de/geobasis/wms_nw_dop', bounds: [5.864417, 50.32088, 9.468311, 52.53345],
+    attribution: credit('https://www.bezreg-koeln.nrw.de/system/files/media/document/file/lizenzbedingungen_geobasis_nrw.pdf', 'Luftbilder © Geobasis NRW', 'dl-de/zero-2-0', 'https://www.govdata.de/dl-de/zero-2-0') },
+  { id: 'st', name: 'Sachsen-Anhalt (DOP20)', layer: 'lsa_lvermgeo_dop20_2', format: 'image/png', url: 'https://www.geodatenportal.sachsen-anhalt.de/wss/service/ST_LVermGeo_DOP_WMS_OpenData/guest', bounds: [10.56074, 50.93098, 13.15432, 53.0417],
+    attribution: credit('https://geodatenportal.sachsen-anhalt.de/gfds/datei/anzeigen/id/3567,501/nutzungsbedingungen_b.pdf', 'Luftbilder © GeoBasis-DE / LVermGeo ST', 'dl-de/by-2-0', 'https://www.govdata.de/dl-de/by-2-0') },
+  { id: 'th', name: 'Thüringen (DOP20)', layer: 'th_dop', format: 'image/png', url: 'https://www.geoproxy.geoportal-th.de/geoproxy/services/DOP20', bounds: [9.798641, 50.140132, 12.887084, 51.691062],
+    attribution: credit('https://www.geoportal-th.de/', 'Luftbilder © GDI-Th', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/deed.de') },
+  { id: 'he', name: 'Hessen (DOP20)', layer: 'he_dop20_rgb', format: 'image/vnd.jpeg-png', url: 'https://www.gds-srv.hessen.de/cgi-bin/lika-services/ogc-free-images.ows', bounds: [7.41867, 49.25, 10.5, 51.7596],
+    attribution: credit('https://gds.hessen.de/', 'Luftbilder © HVBG Hessen', 'nutzbar ohne Einschränkung', 'https://gds.hessen.de/') },
+  { id: 'rp', name: 'Rheinland-Pfalz (DOP20)', layer: 'rp_dop20', format: 'image/vnd.jpeg-png', url: 'https://geo4.service24.rlp.de/wms/rp_dop20.fcgi', bounds: [6.037773, 48.897996, 8.617703, 51.000893],
+    attribution: credit('https://lvermgeo.rlp.de/', 'Luftbilder © GeoBasis-DE / LVermGeoRP', 'dl-de/by-2-0', 'https://www.govdata.de/dl-de/by-2-0') },
+  { id: 'sh', name: 'Schleswig-Holstein (DOP20)', layer: 'sh_dop20_rgb', format: 'image/png', url: 'https://dienste.gdi-sh.de/WMS_SH_DOP20col_OpenGBD', bounds: [7.823156, 53.298791, 11.415539, 55.154323],
+    attribution: credit('https://www.schleswig-holstein.de/DE/landesregierung/ministerien-behoerden/LVERMGEOSH', 'Luftbilder © LVermGeo SH', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/deed.de') },
+  { id: 'mv', name: 'Mecklenburg-Vorpommern (DOP)', layer: 'mv_dop', format: 'image/png', url: 'https://www.geodaten-mv.de/dienste/adv_dop', bounds: [10.33942, 53.039183, 14.47699, 54.820921],
+    attribution: credit('https://www.geodaten-mv.de/', 'Luftbilder © GeoBasis-DE/M-V', 'Quellenvermerk', 'https://www.geodaten-mv.de/') }
+];
+export const DOP_BOUNDS = AERIAL_SOURCES[0].bounds;
+export const dopCovers = (lon: number, lat: number) => AERIAL_SOURCES.some(({ bounds: [w, s, e, n] }) => lon >= w && lon <= e && lat >= s && lat <= n);
+export const aerialLayerIds = AERIAL_SOURCES.map(source => 'satellite-dop-' + source.id);
 const imageryTile = 'https://tiles.maps.eox.at/wms?service=WMS&version=1.1.1&request=GetMap' +
   '&layers=s2cloudless-2024_3857&styles=&format=image/jpeg&srs=EPSG:3857&width=256&height=256&bbox={bbox-epsg-3857}';
 export interface MapPreferences {
@@ -104,7 +128,7 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
         tiles: [new URL(publicAsset('satellite-overview.jpg'), typeof location === 'undefined' ? 'http://localhost/' : location.href).href],
         attribution: '<a href="https://worldview.earthdata.nasa.gov/">NASA Worldview · Blue Marble</a>'
       },
-      'satellite-dop': { type: 'raster', tileSize: 256, minzoom: 11, maxzoom: 19, bounds: DOP_BOUNDS, tiles: [dopTile], attribution: dopAttribution },
+      ...Object.fromEntries(AERIAL_SOURCES.map(source => ['satellite-dop-' + source.id, { type: 'raster' as const, tileSize: 256, minzoom: 11, maxzoom: 19, bounds: source.bounds, tiles: [wms(source.url, source.layer, source.format)], attribution: source.attribution }])),
       satellite: {
         type: 'raster', tileSize: 256, maxzoom: 15,
         tiles: [imageryTile],
@@ -122,8 +146,8 @@ export function mapStyle(preferences: MapPreferences): StyleSpecification {
       // Sentinel-2 (10 m) nur als regionale Übersicht; darüber hinaus nie hochskaliert anzeigen
       { id: 'satellite', type: 'raster', source: 'satellite', maxzoom: 14, layout: { visibility: visible(satellite) },
         paint: { 'raster-brightness-max': brightness } },
-      { id: 'satellite-dop', type: 'raster', source: 'satellite-dop', minzoom: 11, layout: { visibility: visible(satellite) },
-        paint: { 'raster-brightness-max': brightness, 'raster-resampling': 'linear', 'raster-fade-duration': 150 } }
+      ...AERIAL_SOURCES.map(source => ({ id: 'satellite-dop-' + source.id, type: 'raster' as const, source: 'satellite-dop-' + source.id, minzoom: 11, layout: { visibility: visible(satellite) as 'visible' | 'none' },
+        paint: { 'raster-brightness-max': brightness, 'raster-resampling': 'linear' as const, 'raster-fade-duration': 150 } }))
     ]
   };
 }
@@ -169,8 +193,8 @@ export function applyMapPreferences(map: LibreMap, preferences: MapPreferences) 
   const brightness = preferences.brightness / 100;
   const before = map.getLayer('cities-fill') ? 'cities-fill' : undefined;
   map.setLayoutProperty('osm', 'visibility', visible(standard(preferences)));
-  for (const id of ['satellite-overview', 'satellite-street-fallback', 'satellite', 'satellite-dop']) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
-  for (const id of ['osm', 'satellite-overview', 'satellite-street-fallback', 'satellite', 'satellite-dop']) map.setPaintProperty(id, 'raster-brightness-max', brightness);
+  for (const id of ['satellite-overview', 'satellite-street-fallback', 'satellite', ...aerialLayerIds]) map.setLayoutProperty(id, 'visibility', visible(preferences.kind === 'satellite'));
+  for (const id of ['osm', 'satellite-overview', 'satellite-street-fallback', 'satellite', ...aerialLayerIds]) map.setPaintProperty(id, 'raster-brightness-max', brightness);
   map.setPaintProperty('bg', 'background-color', def && preferences.kind !== 'satellite' ? tone(def.background, brightness) : '#172834');
 
   if ((def || preferences.kind === 'buildings') && !map.getSource('openmap')) {

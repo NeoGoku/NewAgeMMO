@@ -42,6 +42,7 @@ for (let t = 0; t < 10; t++) {
 }
 add({ id: 'reset_stone', name: 'Stein der Neugeburt', type: 'consumable', stack: 5, price: 50000, use: { resetAttrs: true }, desc: 'Setzt alle verteilten Attributpunkte zurück.', icon: { shape: 'stone', color: '#ff5de0' } });
 add({ id: 'm_meat', name: 'Wildfleisch', type: 'material', stack: 999, price: 4, desc: 'Frisches Fleisch.', icon: { shape: 'meat', color: '#d4604a' } });
+add({ id: 'm_fish', name: 'Frischer Fisch', type: 'material', stack: 999, price: 5, desc: 'Frisch gefangener Fisch.', icon: { shape: 'meat', color: '#6ab6e8' } });
 add({ id: 'm_scrap', name: 'Schrottteile', type: 'material', stack: 999, price: 6, desc: 'Robotertrümmer.', icon: { shape: 'ingot', color: '#7d8791' } });
 add({ id: 'tp_scroll', name: 'Rückkehrrolle', type: 'consumable', stack: 20, price: 150, use: { teleport: 'aurelia_plaza' }, desc: 'Teleportiert nach Aurelia.', icon: { shape: 'scroll', color: '#e8d8a0' } });
 add({ id: 'q_package', name: 'Versiegeltes Paket', type: 'misc', stack: 1, price: 0, tradable: false, desc: 'Questgegenstand.', icon: { shape: 'box', color: '#c8a46a' } });

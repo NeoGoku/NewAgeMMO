@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { GEO, PROPERTY_SOURCE, type GeoPropertyOffer } from '@nam/shared';
 import { call } from '../game';
 import { geoDo } from '../geo/bus';
+import { matchesProperty, propertyBuildingNames as buildingNames } from '../geo/property-filter';
 import { net } from '../net';
 import { set, toast, useS } from '../store';
 import { fmt, Win } from './kit';
+import { PropertyFilterFields } from './PropertyFilterFields';
 
 interface Catalog {
   region: string;
@@ -16,10 +18,6 @@ interface Catalog {
   list: GeoPropertyOffer[];
 }
 
-const buildingNames: Record<string, string> = {
-  apartments: 'Mehrfamilienhaus', detached: 'Einfamilienhaus', house: 'Haus', residential: 'Wohngebäude',
-  semidetached_house: 'Doppelhaushälfte', terrace: 'Reihenhaus', bungalow: 'Bungalow', dormitory: 'Wohnheim', commercial: 'Gewerbeimmobilie', retail: 'Ladenlokal', office: 'Bürogebäude', virtual_plot: 'Virtuelles Baugrundstück',
-};
 const inRange = (property: GeoPropertyOffer) => property.distanceM !== undefined && property.distanceM <= GEO.interactM;
 
 function PropertyFootprint({ footprint }: { footprint: NonNullable<GeoPropertyOffer['footprint']> }) {
@@ -45,11 +43,8 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [confirmSale, setConfirmSale] = useState('');
-  const [tab, setTab] = useState<'market' | 'travel'>('market');
-  const [type, setType] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-  const [minArea, setMinArea] = useState('');
-  const [maxDistance, setMaxDistance] = useState('');
+  const [tab, setTab] = useState<'market' | 'travel' | 'rentals'>('market');
+  const propertyFilters = useS(state => state.propertyFilters);
   const refresh = () => setVersion(n => n + 1);
   useEffect(() => {
     let current = true;
@@ -63,17 +58,23 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
     return () => { current = false; };
   }, [id, version]);
 
-  async function action(t: string, property: GeoPropertyOffer) {
+  async function action(t: string, property: GeoPropertyOffer, extra: Record<string, unknown> = {}) {
     setBusy(true);
     try {
-      const result = await call(t, { id: t === 'houseEnter' ? property.houseId : property.id });
+      const result = await call(t, { id: t === 'houseEnter' ? property.houseId : property.id, ...extra });
       if (!result) return;
       if (t === 'geoPropertyTravel') {
         set({ panel: null });
         geoDo('recenter');
       } else if (t === 'houseEnter') set({ panel: null });
       else {
-        toast(t === 'geoPropertyBuild' ? 'Grundstück bebaut' : t === 'geoPropertyBuy' ? 'Immobilie gekauft' : `Immobilie verkauft · +${fmt(result.gold)} Gold`, 'ok');
+        const feedback: Record<string, string> = {
+          geoPropertyBuild: 'Grundstück bebaut', geoPropertyBuy: 'Immobilie gekauft',
+          geoPropertyRent: 'Mietvertrag abgeschlossen', geoPropertyRenew: 'Mietvertrag verlängert',
+          geoPropertyEndLease: 'Mietvertrag beendet', geoPropertyLeaseOffer: extra.on ? 'Mietangebot veröffentlicht' : 'Mietangebot zurückgezogen',
+          geoPropertySell: `Immobilie verkauft · +${fmt(result.gold ?? 0)} Gold`,
+        };
+        toast(feedback[t], 'ok');
         setConfirmSale('');
         refresh();
       }
@@ -85,11 +86,11 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
     geoDo('walkTo', { lat: property.lat, lon: property.lon, name: buildingNames[property.building] || 'Wohngebäude' });
   }
 
-  const displayed = catalog?.list.filter(property => tab === 'travel' ? property.status === 'mine' :
-    (!type || property.building === type) &&
-    (!maxPrice || property.buyGold <= Number(maxPrice)) &&
-    (!minArea || (property.unitAreaM2 ?? (property.floorAreaM2 || property.footprintM2)) >= Number(minArea)) &&
-    (!maxDistance || (property.distanceM !== undefined && property.distanceM <= Number(maxDistance)))) ?? [];
+  const displayed = catalog?.list.filter(property => {
+    if (tab === 'travel') return property.status === 'mine' && !property.rentalManagement?.until;
+    if (tab === 'rentals') return !!(property.rentUntil || property.rentalManagement);
+    return id || matchesProperty(property, propertyFilters);
+  }) ?? [];
 
   return <Win title="Immobilien" icon="⌂" w={610} onClose={() => set({ panel: null })}>
     <div className="row wrap">
@@ -100,22 +101,14 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
     </div>
     <div className="row wrap" aria-label="Immobilienansicht">
       <button className={'btn sm' + (tab === 'market' ? ' on' : '')} aria-pressed={tab === 'market'} onClick={() => setTab('market')}>Markt</button>
+      <button className={'btn sm' + (tab === 'rentals' ? ' on' : '')} aria-pressed={tab === 'rentals'} onClick={() => { setTab('rentals'); if (id) set({ selected: null }); }}>Mietverträge</button>
       <button className={'btn sm' + (tab === 'travel' ? ' on' : '')} aria-pressed={tab === 'travel'} onClick={() => { setTab('travel'); if (id) set({ selected: null }); }}>Schnellreise</button>
     </div>
-    {tab === 'market' && !id && <details className="card">
-      <summary>Immobilien filtern</summary>
-      <div className="row wrap">
-        <label>Typ <select value={type} onChange={e => setType(e.target.value)}><option value="">Alle</option>
-          {Object.entries(buildingNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-        </select></label>
-        <label>Preis bis (Gold) <input inputMode="numeric" type="number" min="0" value={maxPrice} onChange={e => setMaxPrice(e.target.value)} /></label>
-        <label>Fläche ab (m²) <input inputMode="numeric" type="number" min="0" value={minArea} onChange={e => setMinArea(e.target.value)} /></label>
-        <label>Entfernung bis (m) <input inputMode="numeric" type="number" min="0" value={maxDistance} onChange={e => setMaxDistance(e.target.value)} /></label>
-      </div>
-    </details>}
+    {tab === 'market' && !id && <PropertyFilterFields />}
     {error ? <p className="err" role="alert">{error}</p> : !catalog ? <p role="status">Immobilien werden geladen …</p> : <>
       {!displayed.length && <p className="dim">
-        {tab === 'travel' ? 'Dein Charakter hat noch keinen Immobilien-Schnellreisepunkt.' : catalog.list.length ? 'Keine Immobilien passen zu diesen Filtern.' :
+        {tab === 'travel' ? 'Dein Charakter hat noch keinen Immobilien-Schnellreisepunkt.' :
+          tab === 'rentals' ? 'Dein Charakter hat noch keine Immobilie zur Vermietung und keinen Mietvertrag.' : catalog.list.length ? 'Keine Immobilien passen zu diesen Filtern.' :
           !catalog.activePosition ? 'Aktiviere einen Standort auf der Karte, um Immobilien in der Nähe zu sehen.' :
           !catalog.snapshot && catalog.regionalStatus === 'disabled' ? 'Live-Import ist auf diesem Server nicht eingerichtet.' :
           !catalog.snapshot && catalog.regionalStatus === 'unavailable' ? 'Der regionale Gebäudekatalog ist vorübergehend nicht erreichbar. Versuche es später erneut.' :
@@ -124,7 +117,12 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
       <div className="col scroll" style={{ maxHeight: '55vh' }}>{displayed.map(property => {
         const name = property.unitAreaM2 ? 'Wohnung im Mehrfamilienhaus' : buildingNames[property.building] || 'Wohngebäude';
         const nearby = inRange(property);
-        const status = property.status === 'mine' ? (property.rentUntil ? 'Gemietet' : 'Dein Eigentum') : property.status === 'owned' ? 'Vergeben' : 'Kauf oder Miete';
+        const canBuy = property.marketStatus === 'sale' || property.marketStatus === 'plot';
+        const canRent = (property.marketStatus === 'rentable' || property.marketStatus === 'sale') && property.rentGold !== undefined;
+        const management = property.rentalManagement;
+        const status = property.status === 'mine' ? property.rentUntil ? 'Gemietet' :
+          management?.until ? 'Dein Eigentum · Vermietet' : 'Dein Eigentum' :
+          property.status === 'owned' ? 'Belegt' : canBuy && canRent ? 'Kauf oder Miete' : canRent ? 'Miete verfügbar' : 'Kauf verfügbar';
         return <article key={property.id} className="card col">
           <div className="row wrap"><b className="grow">{name}</b><span className="pill">{status}</span></div>
           <div className="sm">
@@ -139,17 +137,19 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
           <div className="row wrap sm dim">
             {property.distanceM !== undefined && <span>{fmt(property.distanceM)} m entfernt</span>}
             <a href={`https://www.openstreetmap.org/${property.osmId}`} target="_blank" rel="noreferrer">{PROPERTY_SOURCE}</a>
-            {property.status === 'available' && <span className="gold">{fmt(property.buyGold)} Gold{property.rentGold ? ` · Miete ${fmt(property.rentGold)} Gold/Woche` : ''}</span>}
-            {property.rentUntil && <span>Miete bis {new Date(property.rentUntil).toLocaleDateString('de-DE')}{property.rentOverdue ? ' (überfällig – bitte verlängern)' : ''}</span>}
+            {canBuy && <span className="gold">{fmt(property.buyGold)} Gold</span>}
+            {canRent && <span className="gold">Miete {fmt(property.rentGold!)} Gold/Woche</span>}
+            {property.rentUntil && <span>Miete bis {new Date(property.rentUntil).toLocaleDateString('de-DE')}{property.rentOverdue ? ' · überfällig' : ''}</span>}
+            {management?.until && <span>Vermietet{management.tenantName ? ' an ' + management.tenantName : ''} bis {new Date(management.until).toLocaleDateString('de-DE')}</span>}
           </div>
           <div className="row wrap">
             {!id && <button className="btn sm" onClick={() => set({ selected: { id: property.id } })}>Besichtigen</button>}
             {!nearby && <button className="btn sm" disabled={busy || !catalog.activePosition || !catalog.virtual} onClick={() => plan(property)}>Route planen</button>}
-            {property.status === 'available' && <button className="btn sm pri"
+            {canBuy && <button className="btn sm pri"
               disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.buyGold}
               onClick={() => void action('geoPropertyBuy', property)}>Kaufen</button>}
-            {property.status === 'available' && !!property.rentGold && <button className="btn sm"
-              disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.rentGold}
+            {canRent && <button className="btn sm"
+              disabled={busy || !nearby || catalog.hasHome || (char?.gold ?? 0) < property.rentGold!}
               onClick={() => void action('geoPropertyRent', property)}>Mieten</button>}
             {property.status === 'mine' && !!property.rentUntil && !!property.rentGold && <button className="btn sm" disabled={busy || (char?.gold ?? 0) < property.rentGold}
               onClick={() => void action('geoPropertyRenew', property)}>Miete verlängern ({fmt(property.rentGold)} Gold)</button>}
@@ -157,17 +157,23 @@ export function GeoPropertyPanel({ id }: { id?: string }) {
               onClick={() => void action('geoPropertyBuild', property)}>Für {fmt(property.buildGold)} Gold bebauen</button>}
             {property.houseId && nearby && <button className="btn sm pri" disabled={busy}
               onClick={() => void action('houseEnter', property)}>Betreten</button>}
-            {property.status === 'mine' && <button className="btn sm" disabled={busy || !catalog.virtual}
+            {property.status === 'mine' && !management?.until && <button className="btn sm" disabled={busy || !catalog.virtual}
               onClick={() => void action('geoPropertyTravel', property)}>Nach Hause reisen</button>}
-            {property.status === 'mine' && confirmSale !== property.id && <button className="btn sm dng" disabled={busy}
+            {management && <button className="btn sm" disabled={busy}
+              onClick={() => void action('geoPropertyLeaseOffer', property, { on: !management.listed })}>
+              {management.listed ? 'Mietangebot zurückziehen' : `Für ${fmt(management.weeklyGold)} Gold/Woche anbieten`}
+            </button>}
+            {(property.rentUntil || property.sellGold !== undefined) && confirmSale !== property.id && <button className="btn sm dng" disabled={busy}
               onClick={() => setConfirmSale(property.id)}>{property.rentUntil ? 'Mietvertrag beenden' : `Für ${fmt(property.sellGold ?? 0)} Gold verkaufen`}</button>}
             {property.status === 'mine' && confirmSale === property.id && <>
-              <button className="btn sm dng" disabled={busy} onClick={() => void action('geoPropertySell', property)}>{property.rentUntil ? 'Beenden bestätigen' : 'Verkauf bestätigen'}</button>
+              <button className="btn sm dng" disabled={busy} onClick={() => void action(property.rentUntil ? 'geoPropertyEndLease' : 'geoPropertySell', property)}>{property.rentUntil ? 'Beenden bestätigen' : 'Verkauf bestätigen'}</button>
               <button className="btn sm" disabled={busy} onClick={() => setConfirmSale('')}>Abbrechen</button>
             </>}
           </div>
           {property.status === 'available' && catalog.hasHome && <div className="xs dim">Dein Charakter besitzt bereits ein Haus.</div>}
-          {property.status === 'available' && !catalog.hasHome && !nearby && <div className="xs dim">Der Kauf ist innerhalb von {GEO.interactM} m möglich.</div>}
+          {property.status === 'available' && !catalog.hasHome && !nearby && <div className="xs dim">{canBuy && canRent ? 'Kauf und Miete sind' : canBuy ? 'Der Kauf ist' : 'Die Miete ist'} innerhalb von {GEO.interactM} m möglich.</div>}
+          {management?.listed && <div className="xs dim">Mietangebot für {fmt(management.weeklyGold)} Gold pro Woche aktiv.</div>}
+          {property.rentOverdue && <div className="xs dim">Verlängere den Vertrag oder hole deine Einrichtung und Vorräte ab.</div>}
           {property.status === 'mine' && !catalog.virtual && <div className="xs dim">Die Heimreise ist im virtuellen Kartenmodus verfügbar.</div>}
         </article>;
       })}</div>
